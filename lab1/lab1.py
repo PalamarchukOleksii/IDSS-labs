@@ -27,12 +27,12 @@ def gradient_descent(a_val, b_val, c_val, eta, tol=None, T=1000):
         w_num = w_num - step
         
         if t % 10 == 0:
-            print(f"Iteration {t}: w = [{w_num[0]:.20f}, {w_num[1]:.20f}]")
+            print(f"Iteration {t}: w = {w_num}")
         
         if tol is not None and np.linalg.norm(step) < tol:
             break
     
-    print(f"Final w* on iter {t}: [{w_num[0]:.20f}, {w_num[1]:.20f}]")
+    print(f"Final w* on iter {t}: {w_num}")
     return w_num
 
 w_opt = gradient_descent(A, B, C, ETA, tol=0.0001)
