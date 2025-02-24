@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-# Constants
+
 A = 0.4
 B = 0.8
 C = 0.5
@@ -14,6 +14,7 @@ ETA_DIVERGE = 1.5
 SAVED_PLOTS_PATH = "plots"
 SAVE_PLOTS = True
 SHOW_PLOTS = True
+
 
 if SAVE_PLOTS:
     os.makedirs(SAVED_PLOTS_PATH, exist_ok=True)
@@ -71,7 +72,6 @@ def save_trajectory_plot(trajectory, eta, title, filename):
     trajectory = np.array(trajectory)
     fig = plt.figure(figsize=(12, 5))
 
-    # 3D plot w1, w2, t
     ax1 = fig.add_subplot(121, projection="3d")
     t_vals = np.arange(len(trajectory))
     ax1.plot3D(trajectory[:, 0], trajectory[:, 1], t_vals, marker="o", linestyle="-")
@@ -80,7 +80,6 @@ def save_trajectory_plot(trajectory, eta, title, filename):
     ax1.set_zlabel("Iteration t")
     ax1.set_title(f"Trajectory of w(t) in 3D (η = {eta})")
 
-    # 2D plot w1 vs w2
     ax2 = fig.add_subplot(122)
     ax2.plot(trajectory[:, 0], trajectory[:, 1], marker="o", linestyle="-")
     ax2.set_xlabel("w1")
@@ -175,6 +174,5 @@ def run_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="experiment
     return trajectory, loss_values
 
 
-# Example usage:
 run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
 run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
