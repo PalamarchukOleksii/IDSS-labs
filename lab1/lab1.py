@@ -7,8 +7,15 @@ import os
 A = 0.4
 B = 0.8
 C = 0.5
-output_dir = "plots"
-os.makedirs(output_dir, exist_ok=True)
+
+ETA_CONVERGE = 0.1
+ETA_DIVERGE = 1.5 
+
+SAVED_PLOTS_PATH = "plots"
+SAVE_PLOTS = True
+SHOW_PLOTS = True
+
+os.makedirs(SAVED_PLOTS_PATH, exist_ok=True)
 
 def compute_gradient():
     a, b, c, sigma, w1, w2 = sp.symbols("a b c sigma w1 w2")
@@ -69,7 +76,7 @@ def save_trajectory_plot(trajectory, eta, title, filename):
     plt.suptitle(title)
     
     # Збереження зображення в файл
-    filepath = os.path.join(output_dir, filename)
+    filepath = os.path.join(SAVED_PLOTS_PATH, filename)
     plt.savefig(filepath)
     plt.close(fig)
     print(f"Plot saved as {filepath}")
@@ -89,7 +96,7 @@ def plot_3d_loss(trajectory, a, b, c, eta, filename):
     ax.set_zlabel("E(w)")
     ax.set_title(f"3D Loss Function and Path (η={eta})")
     plt.legend()
-    plt.savefig(os.path.join(output_dir, filename))
+    plt.savefig(os.path.join(SAVED_PLOTS_PATH, filename))
     plt.show()
 
 def plot_loss_vs_epoch(loss_values, eta, filename):
@@ -100,7 +107,7 @@ def plot_loss_vs_epoch(loss_values, eta, filename):
     plt.title(f"Loss Function Over Iterations (η={eta})")
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(output_dir, filename))
+    plt.savefig(os.path.join(SAVED_PLOTS_PATH, filename))
     plt.show()
 
 def plot_loss_vs_w(trajectory, loss_values, eta, filename):
@@ -111,25 +118,20 @@ def plot_loss_vs_w(trajectory, loss_values, eta, filename):
     plt.title(f"Loss Function vs w (η={eta})")
     plt.legend()
     plt.grid()
-    plt.savefig(os.path.join(output_dir, filename))
+    plt.savefig(os.path.join(SAVED_PLOTS_PATH, filename))
     plt.show()
 
-# Виконуємо gradient descent для двох випадків
-eta_converge = 0.1
-eta_diverge = 2.0  # Попередньо підібране значення для розходження
+def run_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="experiment"):
+    print(f"Running experiment: {experiment_name} with η = {eta}")
+    trajectory, loss_values = gradient_descent(a, b, c, eta, tol, T)
+    
+    plot_3d_loss(trajectory, a, b, c, eta, f"{experiment_name}_3d.png")
+    plot_loss_vs_epoch(loss_values, eta, f"{experiment_name}_loss_vs_epoch.png")
+    plot_loss_vs_w(trajectory, loss_values, eta, f"{experiment_name}_loss_vs_w.png")
+    save_trajectory_plot(trajectory, eta, f"Gradient Descent (η = {eta}) - {experiment_name}", f"{experiment_name}_trajectory.png")
+    
+    return trajectory, loss_values
 
-# Для сходження
-print("Converging case:")
-trajectory1, loss_values1 = gradient_descent(A, B, C, eta_converge, tol=0.0001)
-plot_3d_loss(trajectory1, A, B, C, eta_converge, "3d_converging.png")
-plot_loss_vs_epoch(loss_values1, eta_converge, "loss_vs_epoch_converging.png")
-plot_loss_vs_w(trajectory1, loss_values1, eta_converge, "loss_vs_w_converging.png")
-save_trajectory_plot(trajectory1, eta_converge, f"Gradient Descent with η = {eta_converge} (Converging)", "converging_eta_0.1.png")
-
-# Для розходження
-print("Diverging case:")
-trajectory2, loss_values2 = gradient_descent(A, B, C, eta_diverge, tol=0.0001)
-plot_3d_loss(trajectory2, A, B, C, eta_diverge, "3d_diverging.png")
-plot_loss_vs_epoch(loss_values2, eta_diverge, "loss_vs_epoch_diverging.png")
-plot_loss_vs_w(trajectory2, loss_values2, eta_diverge, "loss_vs_w_diverging.png")
-save_trajectory_plot(trajectory2, eta_diverge, f"Gradient Descent with η = {eta_diverge} (Diverging)", "diverging_eta_2.0.png")
+# Example usage:
+run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
+run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
