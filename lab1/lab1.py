@@ -7,7 +7,7 @@ import os
 A = 0.4
 B = 0.8
 C = 0.5
-output_dir = "output_plots"
+output_dir = "plots"
 os.makedirs(output_dir, exist_ok=True)
 
 def compute_gradient():
