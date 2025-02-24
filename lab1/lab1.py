@@ -13,7 +13,7 @@ ETA_DIVERGE = 1.5
 
 SAVED_PLOTS_PATH = "plots"
 SAVE_PLOTS = True
-SHOW_PLOTS = False
+SHOW_PLOTS = True
 
 if SAVE_PLOTS:
     os.makedirs(SAVED_PLOTS_PATH, exist_ok=True)
@@ -98,8 +98,8 @@ def save_trajectory_plot(trajectory, eta, title, filename):
 
 
 def plot_3d_loss(trajectory, a, b, c, eta, filename):
-    w1_vals = np.linspace(-2, 2, 5)
-    w2_vals = np.linspace(-2, 2, 5)
+    w1_vals = np.linspace(-0.2, 1, 20)
+    w2_vals = np.linspace(-0.2, 1, 20)
     W1, W2 = np.meshgrid(w1_vals, w2_vals)
     E_vals = loss_function(W1, W2, a, b, c)
 
