@@ -10,6 +10,8 @@ C = 0.5
 
 ETA_CONVERGE = 0.1
 ETA_DIVERGE = 1.5
+GAMMA = 0.9  # Для RMSProp
+epsilon = 1e-8  # Маленьке значення для уникнення ділення на нуль
 
 SAVED_PLOTS_PATH = "plots"
 SAVE_PLOTS = True
@@ -174,5 +176,52 @@ def run_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="experiment
     return trajectory, loss_values
 
 
+def rmsprop(a_val, b_val, c_val, eta, tol=None, T=1000):
+    grad_func = compute_gradient()
+    w_num = np.array([0.0, 0.0])
+    s = np.zeros_like(w_num)  # Кеш для накопичення градієнтів
+    trajectory = [w_num.copy()]
+    loss_values = []
+
+    for t in range(T):
+        grad_val = np.array(
+            grad_func(w_num[0], w_num[1], a_val, b_val, c_val)
+        ).flatten()
+
+        s = GAMMA * s + (1 - GAMMA) * grad_val ** 2  # Оновлення кешу градієнта
+        step = eta / (np.sqrt(s) + epsilon) * grad_val
+        w_num = w_num - step
+
+        trajectory.append(w_num.copy())
+        loss_values.append(loss_function(w_num[0], w_num[1], a_val, b_val, c_val))
+
+        if t % 10 == 0:
+            print(f"Iteration {t}: w = {w_num}")
+
+        if tol is not None and np.linalg.norm(step) < tol:
+            break
+
+    print(f"Final w* on iter {t}: {w_num}")
+    return np.array(trajectory), np.array(loss_values)
+
+
+def run_rmsprop_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="rmsprop_experiment"):
+    print(f"\n\nRunning RMSProp experiment: {experiment_name} with η = {eta}")
+    trajectory, loss_values = rmsprop(a, b, c, eta, tol, T)
+
+    #plot_3d_loss(trajectory, a, b, c, eta, f"{experiment_name}_3d.png")
+    #plot_loss_vs_epoch(loss_values, eta, f"{experiment_name}_loss_vs_epoch.png")
+    #plot_loss_vs_w(trajectory, loss_values, eta, f"{experiment_name}_loss_vs_w.png")
+    save_trajectory_plot(
+        trajectory,
+        eta,
+        f"RMSProp (η = {eta}) - {experiment_name}",
+        f"{experiment_name}_trajectory.png",
+    )
+
+    return trajectory, loss_values
+
 run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
 run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
+run_rmsprop_experiment(A, B, C, ETA_CONVERGE, experiment_name="rmsprop_converging_case")
+run_rmsprop_experiment(A, B, C, ETA_DIVERGE, experiment_name="rmsprop_diverging_case")
