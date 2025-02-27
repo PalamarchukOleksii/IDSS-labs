@@ -31,6 +31,25 @@ def compute_gradient():
     E = 1 / 2 * sigma**2 - (r_xd.T * w)[0] + 1 / 2 * (w.T * R_x * w)[0]
     grad_E = sp.Matrix([sp.diff(E, w1), sp.diff(E, w2)])
 
+    return grad_E
+
+
+def solve_gradient(a_val, b_val, c_val):
+    grad_E = compute_gradient()
+    w1, w2, a, b, c = sp.symbols("w1 w2 a b c")
+
+    eqs = [sp.Eq(grad_E[0], 0), sp.Eq(grad_E[1], 0)]
+
+    solution = sp.solve(eqs, (w1, w2))
+
+    w1_val = solution[w1].subs({a: a_val, b: b_val, c: c_val})
+    w2_val = solution[w2].subs({a: a_val, b: b_val, c: c_val})
+
+    print("Real result:", [w1_val, w2_val])
+
+
+def convert_to_numpy(grad_E):
+    a, b, c, w1, w2 = sp.symbols("a b c w1 w2")
     return sp.lambdify((w1, w2, a, b, c), grad_E, "numpy")
 
 
@@ -39,7 +58,7 @@ def loss_function(w1, w2, a, b, c):
 
 
 def gradient_descent(a_val, b_val, c_val, eta, tol=None, T=1000):
-    grad_func = compute_gradient()
+    grad_func = convert_to_numpy(compute_gradient())
     w_num = np.array([0.0, 0.0])
     trajectory = [w_num.copy()]
     loss_values = []
@@ -177,7 +196,7 @@ def run_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="experiment
 
 
 def rmsprop(a_val, b_val, c_val, eta, tol=None, T=1000):
-    grad_func = compute_gradient()
+    grad_func = convert_to_numpy(compute_gradient())
     w_num = np.array([0.0, 0.0])
     s = np.zeros_like(w_num)  # Кеш для накопичення градієнтів
     trajectory = [w_num.copy()]
@@ -188,7 +207,7 @@ def rmsprop(a_val, b_val, c_val, eta, tol=None, T=1000):
             grad_func(w_num[0], w_num[1], a_val, b_val, c_val)
         ).flatten()
 
-        s = GAMMA * s + (1 - GAMMA) * grad_val ** 2  # Оновлення кешу градієнта
+        s = GAMMA * s + (1 - GAMMA) * grad_val**2  # Оновлення кешу градієнта
         step = eta / (np.sqrt(s) + epsilon) * grad_val
         w_num = w_num - step
 
@@ -205,13 +224,15 @@ def rmsprop(a_val, b_val, c_val, eta, tol=None, T=1000):
     return np.array(trajectory), np.array(loss_values)
 
 
-def run_rmsprop_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="rmsprop_experiment"):
+def run_rmsprop_experiment(
+    a, b, c, eta, tol=0.0001, T=1000, experiment_name="rmsprop_experiment"
+):
     print(f"\n\nRunning RMSProp experiment: {experiment_name} with η = {eta}")
     trajectory, loss_values = rmsprop(a, b, c, eta, tol, T)
 
-    #plot_3d_loss(trajectory, a, b, c, eta, f"{experiment_name}_3d.png")
-    #plot_loss_vs_epoch(loss_values, eta, f"{experiment_name}_loss_vs_epoch.png")
-    #plot_loss_vs_w(trajectory, loss_values, eta, f"{experiment_name}_loss_vs_w.png")
+    plot_3d_loss(trajectory, a, b, c, eta, f"{experiment_name}_3d.png")
+    plot_loss_vs_epoch(loss_values, eta, f"{experiment_name}_loss_vs_epoch.png")
+    plot_loss_vs_w(trajectory, loss_values, eta, f"{experiment_name}_loss_vs_w.png")
     save_trajectory_plot(
         trajectory,
         eta,
@@ -245,6 +266,8 @@ def check_convergence_rate(eta, c):
 
 
 def run_full_experiment():
+    solve_gradient(A, B, C)
+
     print("Перевірка збіжності градієнтного спуску:")
     check_convergence_rate(ETA_CONVERGE, C)
     check_convergence_rate(ETA_DIVERGE, C)
@@ -255,8 +278,12 @@ def run_full_experiment():
 
     run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
     run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
-    run_rmsprop_experiment(A, B, C, ETA_CONVERGE, experiment_name="rmsprop_converging_case")
-    run_rmsprop_experiment(A, B, C, ETA_DIVERGE, experiment_name="rmsprop_diverging_case")
+    run_rmsprop_experiment(
+        A, B, C, ETA_CONVERGE, experiment_name="rmsprop_converging_case"
+    )
+    run_rmsprop_experiment(
+        A, B, C, ETA_DIVERGE, experiment_name="rmsprop_diverging_case"
+    )
 
 
 run_full_experiment()
