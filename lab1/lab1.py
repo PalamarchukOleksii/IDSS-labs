@@ -221,7 +221,42 @@ def run_rmsprop_experiment(a, b, c, eta, tol=0.0001, T=1000, experiment_name="rm
 
     return trajectory, loss_values
 
-run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
-run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
-run_rmsprop_experiment(A, B, C, ETA_CONVERGE, experiment_name="rmsprop_converging_case")
-run_rmsprop_experiment(A, B, C, ETA_DIVERGE, experiment_name="rmsprop_diverging_case")
+
+def compute_eigenvalues(c):
+    R_x = np.array([[1, c], [c, 1]])
+    eigenvalues = np.linalg.eigvals(R_x)
+    return np.min(eigenvalues), np.max(eigenvalues)
+
+
+def check_convergence_rate(eta, c):
+    lambda_min, lambda_max = compute_eigenvalues(c)
+    if 0 < eta < 2 / lambda_max:
+        print(f"η = {eta} забезпечує збіжність.")
+    else:
+        print(f"η = {eta} викликає розбіжність!")
+
+    ratio = lambda_min / lambda_max
+    if ratio > 0.9:
+        print("Алгоритм збігається швидко.")
+    elif ratio < 0.1:
+        print("Алгоритм збігається повільно.")
+    else:
+        print("Алгоритм має середню швидкість збіжності.")
+
+
+def run_full_experiment():
+    print("Перевірка збіжності градієнтного спуску:")
+    check_convergence_rate(ETA_CONVERGE, C)
+    check_convergence_rate(ETA_DIVERGE, C)
+
+    print("Перевірка збіжності RMSProp:")
+    check_convergence_rate(ETA_CONVERGE, C)
+    check_convergence_rate(ETA_DIVERGE, C)
+
+    run_experiment(A, B, C, ETA_CONVERGE, experiment_name="converging_case")
+    run_experiment(A, B, C, ETA_DIVERGE, experiment_name="diverging_case")
+    run_rmsprop_experiment(A, B, C, ETA_CONVERGE, experiment_name="rmsprop_converging_case")
+    run_rmsprop_experiment(A, B, C, ETA_DIVERGE, experiment_name="rmsprop_diverging_case")
+
+
+run_full_experiment()
