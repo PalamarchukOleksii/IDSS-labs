@@ -175,6 +175,30 @@ class MathFunctions:
         m = targets.shape[0]
         return -np.sum(targets * np.log(np.clip(predictions, 1e-9, 1))) / m
 
+    @staticmethod
+    def leaky_relu(x, alpha=0.01):
+        return np.where(x > 0, x, alpha * x)
+
+    @staticmethod
+    def leaky_relu_derivative(x, alpha=0.01):
+        return np.where(x > 0, 1, alpha)
+
+    @staticmethod
+    def parametric_leaky_relu(x, alpha):
+        return np.where(x > 0, x, alpha * x)
+
+    @staticmethod
+    def parametric_leaky_relu_derivative(x, alpha):
+        return np.where(x > 0, 1, alpha)
+
+    @staticmethod
+    def elu(x, alpha=1.0):
+        return np.where(x > 0, x, alpha * (np.exp(x) - 1))
+
+    @staticmethod
+    def elu_derivative(x, alpha=1.0):
+        return np.where(x > 0, 1, alpha * np.exp(x))
+
 
 class SimpleNeuralNetwork(object):
     def __init__(
@@ -355,33 +379,6 @@ def evaluate_accuracy(model, X, y_true):
     return np.mean(predicted_classes == true_classes)
 
 
-# Методи активації
-
-
-def leaky_relu(x, alpha=0.01):
-    return np.where(x > 0, x, alpha * x)
-
-
-def leaky_relu_derivative(x, alpha=0.01):
-    return np.where(x > 0, 1, alpha)
-
-
-def parametric_leaky_relu(x, alpha):
-    return np.where(x > 0, x, alpha * x)
-
-
-def parametric_leaky_relu_derivative(x, alpha):
-    return np.where(x > 0, 1, alpha)
-
-
-def elu(x, alpha=1.0):
-    return np.where(x > 0, x, alpha * (np.exp(x) - 1))
-
-
-def elu_derivative(x, alpha=1.0):
-    return np.where(x > 0, 1, alpha * np.exp(x))
-
-
 # Функція для підбору швидкості навчання
 
 
@@ -481,7 +478,7 @@ if __name__ == "__main__":
     # Вибір функції активації
     # activation_function = leaky_relu  # Використовується Leaky ReLU
     # activation_function = parametric_leaky_relu  # Використовувати Parametric Leaky ReLU
-    activation_function = elu  # Використовувати ELU
+    activation_function = MathFunctions.elu  # Використовувати ELU
 
     # Вибір найкращої швидкості навчання
     best_lr = find_best_learning_rate(
