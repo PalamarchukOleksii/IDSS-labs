@@ -3,8 +3,10 @@ import os
 import numpy as np
 from PIL import Image
 
-DATASET_ARCHIVE_PATH = "./dataset.zip"
-DATASET_EXTRACT_PATH = "./dataset"
+SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
+DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY,"dataset.zip")
+DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, "dataset")
+
 TRAIN_TEST_SPLIT = 0.8
 USE_SEPARATE_DATASETS = True  # Set to True to use separate datasets (background and evaluation), False to mix them
 
