@@ -140,6 +140,7 @@ def prepare_omniglot_dataset():
     return train_data, train_targets, val_data, val_targets, classes
 
 
+
 class SimpleNeuralNetwork(object):
     def __init__(self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE):
         self.input_size = input_size
@@ -185,64 +186,6 @@ class SimpleNeuralNetwork(object):
         hidden_error = np.dot(output_error, self.weights_hidden_output.T) * self.relu_derivative(self.hidden_output)
         
         # Оновлення вагів і зсувів
-        self.weights_hidden_output -= self.lr * np.dot(self.hidden_output.T, output_error) / m
-        self.bias_output -= self.lr * np.sum(output_error, axis=0, keepdims=True) / m
-        self.weights_input_hidden -= self.lr * np.dot(X.T, hidden_error) / m
-        self.bias_hidden -= self.lr * np.sum(hidden_error, axis=0, keepdims=True) / m
-    
-    def train(self, X_train, y_train, epochs=EPOCHS):
-        for epoch in range(epochs):
-            outputs = self.forward(X_train)
-            loss = self.cross_entropy_loss(outputs, y_train)
-            self.backward(X_train, y_train)
-            if epoch % 1 == 0:
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
-    def __init__(self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE):
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.lr = learning_rate  # Ініціалізація learning rate
-
-        # Ініціалізація вагів для входу-вихідного шару та входу-прихованого шару
-        self.weights_input_hidden = (
-            np.random.randn(input_size, hidden_size) * 0.01
-        )  # Маленькі випадкові значення
-        self.weights_hidden_output = np.random.randn(hidden_size, output_size) * 0.01
-
-        # Ініціалізація зсувів (bias)
-        self.bias_hidden = np.zeros((1, hidden_size))
-        self.bias_output = np.zeros((1, output_size))
-
-    def sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
-    
-    def sigmoid_derivative(self, x):
-        return x * (1 - x)
-
-    def softmax(self, x):
-        exp_x = np.exp(x - np.max(x))  # Для стабільності обчислень
-        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-
-    def cross_entropy_loss(self, predictions, targets):
-        m = targets.shape[0]
-        return -np.sum(targets * np.log(predictions + 1e-9)) / m
-    
-    def forward(self, X):
-        # Процес прямого поширення сигналу через прихований шар
-        self.hidden_input = np.dot(X, self.weights_input_hidden) + self.bias_hidden
-        self.hidden_output = self.sigmoid(self.hidden_input)
-
-        # Процес прямого поширення сигналу через вихідний шар
-        self.output_input = (
-            np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
-        )
-        self.output = self.softmax(self.output_input)
-        return self.output
-     
-    def backward(self, X, y_true):
-        m = X.shape[0]
-        output_error = self.output - y_true
-        hidden_error = np.dot(output_error, self.weights_hidden_output.T) * self.sigmoid_derivative(self.hidden_output)
         self.weights_hidden_output -= self.lr * np.dot(self.hidden_output.T, output_error) / m
         self.bias_output -= self.lr * np.sum(output_error, axis=0, keepdims=True) / m
         self.weights_input_hidden -= self.lr * np.dot(X.T, hidden_error) / m
