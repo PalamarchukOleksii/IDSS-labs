@@ -2,11 +2,11 @@ import zipfile
 import os
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
+import time
 
 DATASET_ARCHIVE = "dataset.zip"
 DATASET_DIRECTORY = "dataset"
-import matplotlib.pyplot as plt
-import time
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
@@ -444,8 +444,8 @@ def train_with_logging(
 
 
 # Додаємо новий метод до класів
-SimpleNeuralNetwork.train = train_with_logging
-MultiLayerPerceptron.train = train_with_logging
+# SimpleNeuralNetwork.train = train_with_logging
+# MultiLayerPerceptron.train = train_with_logging
 
 
 def measure_prediction_time(model, X_sample):
@@ -493,7 +493,7 @@ if __name__ == "__main__":
         input_size=input_size, hidden_size=128, output_size=output_size
     )
     print("Training Simple Neural Network...")
-    simple_nn.train(X_train, y_train, X_val, y_val, model_name="SimpleNN")
+    simple_nn.train(X_train, y_train)
     measure_prediction_time(simple_nn, X_val[:1])
 
     # Multi-Layer Perceptron
@@ -505,5 +505,5 @@ if __name__ == "__main__":
         learning_rate=3,
     )
     print("Training Multi-Layer Perceptron...")
-    mlp.train(X_train, y_train, X_val, y_val, model_name="MLP")
+    mlp.train(X_train, y_train)
     measure_prediction_time(mlp, X_val[:1])
