@@ -9,7 +9,8 @@ DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, "dataset")
 
 TRAIN_TEST_SPLIT = 0.8
 USE_SEPARATE_DATASETS = True  # Set to True to use separate datasets (background and evaluation), False to mix them
-
+LEARNING_RATE = 0.01
+EPOCHS = 10
 
 def extract_dataset(
     archive_path=DATASET_ARCHIVE_PATH, extract_path=DATASET_EXTRACT_PATH
@@ -20,7 +21,6 @@ def extract_dataset(
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
         zip_ref.extractall(extract_path)
     print(f"The archive has been successfully unpacked to {extract_path}")
-
 
 def load_images(root_dir):
     data = []
@@ -91,6 +91,7 @@ def prepare_omniglot_dataset():
     background_path = os.path.join(DATASET_EXTRACT_PATH, "images_background")
     evaluation_path = os.path.join(DATASET_EXTRACT_PATH, "images_evaluation")
 
+
     if USE_SEPARATE_DATASETS:
         # Use background for training and evaluation for validation
         print(
@@ -157,11 +158,18 @@ class SimpleNeuralNetwork(object):
 
     def sigmoid(self, x):
         return 1 / (1 + np.exp(-x))
+    
+    def sigmoid_derivative(self, x):
+        return x * (1 - x)
 
     def softmax(self, x):
         exp_x = np.exp(x - np.max(x))  # Для стабільності обчислень
         return exp_x / np.sum(exp_x, axis=1, keepdims=True)
 
+    def cross_entropy_loss(self, predictions, targets):
+        m = targets.shape[0]
+        return -np.sum(targets * np.log(predictions + 1e-9)) / m
+    
     def forward(self, X):
         # Процес прямого поширення сигналу через прихований шар
         self.hidden_input = np.dot(X, self.weights_input_hidden) + self.bias_hidden
@@ -172,9 +180,24 @@ class SimpleNeuralNetwork(object):
             np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
         )
         self.output = self.softmax(self.output_input)
-
         return self.output
-
+     
+    def backward(self, X, y_true):
+        m = X.shape[0]
+        output_error = self.output - y_true
+        hidden_error = np.dot(output_error, self.weights_hidden_output.T) * self.sigmoid_derivative(self.hidden_output)
+        self.weights_hidden_output -= self.lr * np.dot(self.hidden_output.T, output_error) / m
+        self.bias_output -= self.lr * np.sum(output_error, axis=0, keepdims=True) / m
+        self.weights_input_hidden -= self.lr * np.dot(X.T, hidden_error) / m
+        self.bias_hidden -= self.lr * np.sum(hidden_error, axis=0, keepdims=True) / m
+    
+    def train(self, X_train, y_train, epochs=EPOCHS):
+        for epoch in range(epochs):
+            outputs = self.forward(X_train)
+            loss = self.cross_entropy_loss(outputs, y_train)
+            self.backward(X_train, y_train)
+            if epoch % 1 == 0:
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
 
 if __name__ == "__main__":
     # Process the dataset
