@@ -53,7 +53,7 @@ Navigate to the folder of the lab you wish to run and execute the desired Python
 
 For example, for `lab1`:
 ```bash
-python lab1.py
+python lab2.py
 ```
 
 Repeat this for other labs as needed.
