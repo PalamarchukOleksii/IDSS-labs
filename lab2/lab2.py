@@ -146,6 +146,34 @@ def prepare_omniglot_dataset():
     return train_data, train_targets, val_data, val_targets, classes
 
 
+class MathFunctions:
+    @staticmethod
+    def relu(x):
+        return np.maximum(0, x)
+
+    @staticmethod
+    def relu_derivative(x):
+        return (x > 0).astype(float)
+
+    @staticmethod
+    def softmax(x):
+        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
+
+    @staticmethod
+    def tanh(x):
+        return np.tanh(x)
+
+    @staticmethod
+    def tanh_derivative(x):
+        return 1 - np.tanh(x) ** 2
+
+    @staticmethod
+    def cross_entropy_loss(predictions, targets):
+        m = targets.shape[0]
+        return -np.sum(targets * np.log(predictions + 1e-9)) / m
+
+
 class SimpleNeuralNetwork(object):
     def __init__(
         self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE
@@ -163,30 +191,16 @@ class SimpleNeuralNetwork(object):
         self.bias_hidden = np.zeros((1, hidden_size))
         self.bias_output = np.zeros((1, output_size))
 
-    def relu(self, x):
-        return np.maximum(0, x)
-
-    def relu_derivative(self, x):
-        return (x > 0).astype(float)
-
-    def softmax(self, x):
-        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-
-    def cross_entropy_loss(self, predictions, targets):
-        m = targets.shape[0]
-        return -np.sum(targets * np.log(predictions + 1e-9)) / m
-
     def forward(self, X):
         # Пряме поширення через прихований шар з ReLU
         self.hidden_input = np.dot(X, self.weights_input_hidden) + self.bias_hidden
-        self.hidden_output = self.relu(self.hidden_input)
+        self.hidden_output = MathFunctions.relu(self.hidden_input)
 
         # Пряме поширення через вихідний шар з softmax
         self.output_input = (
             np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
         )
-        self.output = self.softmax(self.output_input)
+        self.output = MathFunctions.softmax(self.output_input)
         return self.output
 
     def backward(self, X, y_true):
@@ -194,7 +208,7 @@ class SimpleNeuralNetwork(object):
         output_error = self.output - y_true
         hidden_error = np.dot(
             output_error, self.weights_hidden_output.T
-        ) * self.relu_derivative(self.hidden_output)
+        ) * MathFunctions.relu_derivative(self.hidden_output)
 
         # Оновлення вагів і зсувів
         self.weights_hidden_output -= (
@@ -207,7 +221,7 @@ class SimpleNeuralNetwork(object):
     def train(self, X_train, y_train, epochs=EPOCHS):
         for epoch in range(epochs):
             outputs = self.forward(X_train)
-            loss = self.cross_entropy_loss(outputs, y_train)
+            loss = MathFunctions.cross_entropy_loss(outputs, y_train)
             self.backward(X_train, y_train)
             if epoch % 1 == 0:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
@@ -242,31 +256,11 @@ class MultiLayerPerceptron:
 
             if i < len(hidden_layers):
                 if activation == "relu":
-                    self.activations.append(self.relu)
+                    self.activations.append(MathFunctions.relu)
                 elif activation == "tanh":
-                    self.activations.append(self.tanh)
+                    self.activations.append(MathFunctions.tanh)
             else:
-                self.activations.append(self.softmax)
-
-    def relu(self, x):
-        return np.maximum(0, x)
-
-    def relu_derivative(self, x):
-        return (x > 0).astype(float)
-
-    def tanh(self, x):
-        return np.tanh(x)
-
-    def tanh_derivative(self, x):
-        return 1 - np.tanh(x) ** 2
-
-    def softmax(self, x):
-        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-
-    def cross_entropy_loss(self, predictions, targets):
-        m = targets.shape[0]
-        return -np.sum(targets * np.log(predictions + 1e-9)) / m
+                self.activations.append(MathFunctions.softmax)
 
     def forward(self, X):
         self.layer_inputs = []  # Вхідні значення кожного шару перед активацією
@@ -293,14 +287,14 @@ class MultiLayerPerceptron:
             gradients_b.append(dL_db)
 
             if i > 0:
-                if self.activations[i - 1] == self.relu:
-                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.relu_derivative(
-                        self.layer_inputs[i - 1]
-                    )
-                elif self.activations[i - 1] == self.tanh:
-                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.tanh_derivative(
-                        self.layer_inputs[i - 1]
-                    )
+                if self.activations[i - 1] == MathFunctions.relu:
+                    dL_dout = np.dot(
+                        dL_dout, self.weights[i].T
+                    ) * MathFunctions.relu_derivative(self.layer_inputs[i - 1])
+                elif self.activations[i - 1] == MathFunctions.tanh:
+                    dL_dout = np.dot(
+                        dL_dout, self.weights[i].T
+                    ) * MathFunctions.tanh_derivative(self.layer_inputs[i - 1])
 
         # Оновлення вагів та зміщень
         for i in range(len(self.weights)):
@@ -314,7 +308,7 @@ class MultiLayerPerceptron:
     def train(self, X_train, y_train, epochs=10):
         for epoch in range(epochs):
             outputs = self.forward(X_train)
-            loss = self.cross_entropy_loss(outputs, y_train)
+            loss = MathFunctions.cross_entropy_loss(outputs, y_train)
             self.backward(X_train, y_train)
             if epoch % 1 == 0:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
