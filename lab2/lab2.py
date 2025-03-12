@@ -3,14 +3,18 @@ import os
 import numpy as np
 from PIL import Image
 
+DATASET_ARCHIVE = "dataset.zip"
+DATASET_DIRECTORY = "dataset"
+
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY,"dataset.zip")
-DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, "dataset")
+DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
+DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_DIRECTORY)
 
 TRAIN_TEST_SPLIT = 0.8
 USE_SEPARATE_DATASETS = True  # Set to True to use separate datasets (background and evaluation), False to mix them
 LEARNING_RATE = 1
 EPOCHS = 10
+
 
 def extract_dataset(
     archive_path=DATASET_ARCHIVE_PATH, extract_path=DATASET_EXTRACT_PATH
@@ -18,9 +22,12 @@ def extract_dataset(
     print("Starting to unpack the archive...")
     if not os.path.exists(extract_path):
         os.makedirs(extract_path)
+
     with zipfile.ZipFile(archive_path, "r") as zip_ref:
         zip_ref.extractall(extract_path)
+
     print(f"The archive has been successfully unpacked to {extract_path}")
+
 
 def load_images(root_dir):
     data = []
@@ -91,7 +98,6 @@ def prepare_omniglot_dataset():
     background_path = os.path.join(DATASET_EXTRACT_PATH, "images_background")
     evaluation_path = os.path.join(DATASET_EXTRACT_PATH, "images_evaluation")
 
-
     if USE_SEPARATE_DATASETS:
         # Use background for training and evaluation for validation
         print(
@@ -140,9 +146,10 @@ def prepare_omniglot_dataset():
     return train_data, train_targets, val_data, val_targets, classes
 
 
-
 class SimpleNeuralNetwork(object):
-    def __init__(self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE):
+    def __init__(
+        self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE
+    ):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
@@ -158,7 +165,7 @@ class SimpleNeuralNetwork(object):
 
     def relu(self, x):
         return np.maximum(0, x)
-    
+
     def relu_derivative(self, x):
         return (x > 0).astype(float)
 
@@ -169,28 +176,34 @@ class SimpleNeuralNetwork(object):
     def cross_entropy_loss(self, predictions, targets):
         m = targets.shape[0]
         return -np.sum(targets * np.log(predictions + 1e-9)) / m
-    
+
     def forward(self, X):
         # Пряме поширення через прихований шар з ReLU
         self.hidden_input = np.dot(X, self.weights_input_hidden) + self.bias_hidden
         self.hidden_output = self.relu(self.hidden_input)
 
         # Пряме поширення через вихідний шар з softmax
-        self.output_input = np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
+        self.output_input = (
+            np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
+        )
         self.output = self.softmax(self.output_input)
         return self.output
-     
+
     def backward(self, X, y_true):
         m = X.shape[0]
         output_error = self.output - y_true
-        hidden_error = np.dot(output_error, self.weights_hidden_output.T) * self.relu_derivative(self.hidden_output)
-        
+        hidden_error = np.dot(
+            output_error, self.weights_hidden_output.T
+        ) * self.relu_derivative(self.hidden_output)
+
         # Оновлення вагів і зсувів
-        self.weights_hidden_output -= self.lr * np.dot(self.hidden_output.T, output_error) / m
+        self.weights_hidden_output -= (
+            self.lr * np.dot(self.hidden_output.T, output_error) / m
+        )
         self.bias_output -= self.lr * np.sum(output_error, axis=0, keepdims=True) / m
         self.weights_input_hidden -= self.lr * np.dot(X.T, hidden_error) / m
         self.bias_hidden -= self.lr * np.sum(hidden_error, axis=0, keepdims=True) / m
-    
+
     def train(self, X_train, y_train, epochs=EPOCHS):
         for epoch in range(epochs):
             outputs = self.forward(X_train)
@@ -199,52 +212,62 @@ class SimpleNeuralNetwork(object):
             if epoch % 1 == 0:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
 
+
 class MultiLayerPerceptron:
-    def __init__(self, input_size, hidden_layers, output_size, activation='relu', learning_rate=0.01):
+    def __init__(
+        self,
+        input_size,
+        hidden_layers,
+        output_size,
+        activation="relu",
+        learning_rate=0.01,
+    ):
         self.input_size = input_size
         self.hidden_layers = hidden_layers
         self.output_size = output_size
         self.learning_rate = learning_rate
-        
+
         # Ініціалізація вагів і зсувів для всіх шарів
         self.weights = []
         self.biases = []
         self.activations = []
 
         layer_sizes = [input_size] + hidden_layers + [output_size]
-        
+
         for i in range(len(layer_sizes) - 1):
-            self.weights.append(np.random.randn(layer_sizes[i], layer_sizes[i + 1]) * 0.01)
+            self.weights.append(
+                np.random.randn(layer_sizes[i], layer_sizes[i + 1]) * 0.01
+            )
             self.biases.append(np.zeros((1, layer_sizes[i + 1])))
-            
+
             if i < len(hidden_layers):
-                if activation == 'relu':
+                if activation == "relu":
                     self.activations.append(self.relu)
-                elif activation == 'tanh':
+                elif activation == "tanh":
                     self.activations.append(self.tanh)
             else:
                 self.activations.append(self.softmax)
-    
+
     def relu(self, x):
         return np.maximum(0, x)
-    
+
     def relu_derivative(self, x):
         return (x > 0).astype(float)
-    
+
     def tanh(self, x):
         return np.tanh(x)
-    
+
     def tanh_derivative(self, x):
         return 1 - np.tanh(x) ** 2
-    
+
     def softmax(self, x):
         exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
         return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-    
+
     def cross_entropy_loss(self, predictions, targets):
         m = targets.shape[0]
         return -np.sum(targets * np.log(predictions + 1e-9)) / m
-    
+
     def forward(self, X):
         self.layer_inputs = []  # Вхідні значення кожного шару перед активацією
         self.layer_outputs = [X]  # Вихідні значення після активації
@@ -253,9 +276,9 @@ class MultiLayerPerceptron:
             z = np.dot(self.layer_outputs[-1], self.weights[i]) + self.biases[i]
             self.layer_inputs.append(z)
             self.layer_outputs.append(self.activations[i](z))
-        
+
         return self.layer_outputs[-1]
-    
+
     def backward(self, X, y_true):
         m = X.shape[0]
         dL_dout = self.layer_outputs[-1] - y_true  # Градієнт на вихідному шарі
@@ -270,16 +293,24 @@ class MultiLayerPerceptron:
             gradients_b.append(dL_db)
 
             if i > 0:
-                if self.activations[i-1] == self.relu:
-                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.relu_derivative(self.layer_inputs[i-1])
-                elif self.activations[i-1] == self.tanh:
-                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.tanh_derivative(self.layer_inputs[i-1])
-        
+                if self.activations[i - 1] == self.relu:
+                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.relu_derivative(
+                        self.layer_inputs[i - 1]
+                    )
+                elif self.activations[i - 1] == self.tanh:
+                    dL_dout = np.dot(dL_dout, self.weights[i].T) * self.tanh_derivative(
+                        self.layer_inputs[i - 1]
+                    )
+
         # Оновлення вагів та зміщень
         for i in range(len(self.weights)):
-            self.weights[i] -= self.learning_rate * gradients_w[len(self.weights) - 1 - i]
-            self.biases[i] -= self.learning_rate * gradients_b[len(self.weights) - 1 - i]
-    
+            self.weights[i] -= (
+                self.learning_rate * gradients_w[len(self.weights) - 1 - i]
+            )
+            self.biases[i] -= (
+                self.learning_rate * gradients_b[len(self.weights) - 1 - i]
+            )
+
     def train(self, X_train, y_train, epochs=10):
         for epoch in range(epochs):
             outputs = self.forward(X_train)
@@ -288,9 +319,12 @@ class MultiLayerPerceptron:
             if epoch % 1 == 0:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
 
+
 if __name__ == "__main__":
     # Process the dataset (викликається один раз)
-    train_data, train_targets, val_data, val_targets, classes = prepare_omniglot_dataset()
+    train_data, train_targets, val_data, val_targets, classes = (
+        prepare_omniglot_dataset()
+    )
 
     print(f"Number of classes: {len(classes)}")
     print("Example sample:")
@@ -306,11 +340,19 @@ if __name__ == "__main__":
     y_train = np.eye(output_size)[train_targets]  # One-hot encoding
 
     # Simple Neural Network
-    simple_nn = SimpleNeuralNetwork(input_size=input_size, hidden_size=128, output_size=output_size)
+    simple_nn = SimpleNeuralNetwork(
+        input_size=input_size, hidden_size=128, output_size=output_size
+    )
     print("Training Simple Neural Network...")
     simple_nn.train(X_train, y_train, epochs=10)
 
     # Multi-Layer Perceptron
-    mlp = MultiLayerPerceptron(input_size=input_size, hidden_layers=[128, 64], output_size=output_size, activation='relu', learning_rate=3)
+    mlp = MultiLayerPerceptron(
+        input_size=input_size,
+        hidden_layers=[128, 64],
+        output_size=output_size,
+        activation="relu",
+        learning_rate=3,
+    )
     print("Training Multi-Layer Perceptron...")
     mlp.train(X_train, y_train, epochs=10)
