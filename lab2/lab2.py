@@ -5,6 +5,8 @@ from PIL import Image
 
 DATASET_ARCHIVE = "dataset.zip"
 DATASET_DIRECTORY = "dataset"
+import matplotlib.pyplot as plt
+import time
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
@@ -314,6 +316,147 @@ class MultiLayerPerceptron:
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
 
 
+def plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name):
+    """Будує та зберігає графіки втрат та accuracy."""
+    plots_dir = os.path.join(SCRIPT_DIRECTORY, "plots")
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    epochs = range(1, len(losses_train) + 1)
+
+    # Графік втрат
+    plt.figure()
+    plt.plot(epochs, losses_train, label="Train Loss")
+    plt.plot(epochs, losses_val, label="Validation Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title(f"Training Loss for {model_name}")
+    plt.legend()
+    plt.savefig(os.path.join(plots_dir, f"{model_name}_loss.png"))
+    plt.close()
+
+    # Графік accuracy
+    plt.figure()
+    plt.plot(epochs, acc_train, label="Train Accuracy")
+    plt.plot(epochs, acc_val, label="Validation Accuracy")
+    plt.xlabel("Epochs")
+    plt.ylabel("Accuracy")
+    plt.title(f"Training Accuracy for {model_name}")
+    plt.legend()
+    plt.savefig(os.path.join(plots_dir, f"{model_name}_accuracy.png"))
+    plt.close()
+
+
+def evaluate_accuracy(model, X, y_true):
+    """Обчислення accuracy для переданих даних."""
+    predictions = model.forward(X)
+    predicted_classes = np.argmax(predictions, axis=1)
+    true_classes = np.argmax(y_true, axis=1)
+    return np.mean(predicted_classes == true_classes)
+
+
+# Методи активації
+
+
+def leaky_relu(x, alpha=0.01):
+    return np.where(x > 0, x, alpha * x)
+
+
+def leaky_relu_derivative(x, alpha=0.01):
+    return np.where(x > 0, 1, alpha)
+
+
+def parametric_leaky_relu(x, alpha):
+    return np.where(x > 0, x, alpha * x)
+
+
+def parametric_leaky_relu_derivative(x, alpha):
+    return np.where(x > 0, 1, alpha)
+
+
+def elu(x, alpha=1.0):
+    return np.where(x > 0, x, alpha * (np.exp(x) - 1))
+
+
+def elu_derivative(x, alpha=1.0):
+    return np.where(x > 0, 1, alpha * np.exp(x))
+
+
+# Функція для підбору швидкості навчання
+
+
+def find_best_learning_rate(
+    model_class, X_train, y_train, X_val, y_val, learning_rates=[0.001, 0.01, 0.1, 1]
+):
+    best_lr = None
+    best_acc = 0
+    results = {}
+
+    for lr in learning_rates:
+        print(f"Testing learning rate: {lr}")
+        model = model_class(
+            input_size=X_train.shape[1],
+            hidden_size=128,
+            output_size=y_train.shape[1],
+            learning_rate=lr,
+        )
+        model.train(
+            X_train, y_train, X_val, y_val, epochs=10, model_name=f"Test_LR_{lr}"
+        )
+        acc = evaluate_accuracy(model, X_val, y_val)
+        results[lr] = acc
+
+        if acc > best_acc:
+            best_acc = acc
+            best_lr = lr
+
+    print(f"Best learning rate: {best_lr} with accuracy: {best_acc:.4f}")
+    return best_lr
+
+
+# Оновлення методу train у SimpleNeuralNetwork та MultiLayerPerceptron
+
+
+def train_with_logging(
+    self, X_train, y_train, X_val, y_val, epochs=None, model_name="model"
+):
+    if epochs is None:
+        epochs = EPOCHS
+
+    losses_train, losses_val = [], []
+    acc_train, acc_val = [], []
+
+    for epoch in range(epochs):
+        outputs = self.forward(X_train)
+        loss = self.cross_entropy_loss(outputs, y_train)
+        self.backward(X_train, y_train)
+
+        losses_train.append(loss)
+        losses_val.append(self.cross_entropy_loss(self.forward(X_val), y_val))
+        acc_train.append(evaluate_accuracy(self, X_train, y_train))
+        acc_val.append(evaluate_accuracy(self, X_val, y_val))
+
+        print(
+            f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.4f}, Train Acc: {acc_train[-1]:.4f}, Val Acc: {acc_val[-1]:.4f}"
+        )
+
+    plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name)
+
+
+# Додаємо новий метод до класів
+SimpleNeuralNetwork.train = train_with_logging
+MultiLayerPerceptron.train = train_with_logging
+
+
+def measure_prediction_time(model, X_sample):
+    """Вимірює час надання прогнозу мережею."""
+    start_time = time.time()
+    model.forward(X_sample)
+    prediction_time = time.time() - start_time
+    print(f"Prediction time: {prediction_time:.6f} seconds")
+    return prediction_time
+
+
 if __name__ == "__main__":
     # Process the dataset (викликається один раз)
     train_data, train_targets, val_data, val_targets, classes = (
@@ -332,13 +475,26 @@ if __name__ == "__main__":
     # Підготовка даних для навчання
     X_train = train_data.reshape(len(train_data), -1)
     y_train = np.eye(output_size)[train_targets]  # One-hot encoding
+    X_val = val_data.reshape(len(val_data), -1)
+    y_val = np.eye(output_size)[val_targets]
+
+    # Вибір функції активації
+    # activation_function = leaky_relu  # Використовується Leaky ReLU
+    # activation_function = parametric_leaky_relu  # Використовувати Parametric Leaky ReLU
+    activation_function = elu  # Використовувати ELU
+
+    # Вибір найкращої швидкості навчання
+    best_lr = find_best_learning_rate(
+        SimpleNeuralNetwork, X_train, y_train, X_val, y_val
+    )
 
     # Simple Neural Network
     simple_nn = SimpleNeuralNetwork(
         input_size=input_size, hidden_size=128, output_size=output_size
     )
     print("Training Simple Neural Network...")
-    simple_nn.train(X_train, y_train, epochs=10)
+    simple_nn.train(X_train, y_train, X_val, y_val, model_name="SimpleNN")
+    measure_prediction_time(simple_nn, X_val[:1])
 
     # Multi-Layer Perceptron
     mlp = MultiLayerPerceptron(
@@ -349,4 +505,5 @@ if __name__ == "__main__":
         learning_rate=3,
     )
     print("Training Multi-Layer Perceptron...")
-    mlp.train(X_train, y_train, epochs=10)
+    mlp.train(X_train, y_train, X_val, y_val, model_name="MLP")
+    measure_prediction_time(mlp, X_val[:1])
