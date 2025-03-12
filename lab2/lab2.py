@@ -153,12 +153,12 @@ class MathFunctions:
 
     @staticmethod
     def relu_derivative(x):
-        return (x > 0).astype(float)
+        return np.where(x > 0, 1.0, 0.0)
 
     @staticmethod
     def softmax(x):
-        exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-        return exp_x / np.sum(exp_x, axis=1, keepdims=True)
+        exp_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
+        return exp_x / np.sum(exp_x, axis=-1, keepdims=True)
 
     @staticmethod
     def tanh(x):
@@ -171,7 +171,7 @@ class MathFunctions:
     @staticmethod
     def cross_entropy_loss(predictions, targets):
         m = targets.shape[0]
-        return -np.sum(targets * np.log(predictions + 1e-9)) / m
+        return -np.sum(targets * np.log(np.clip(predictions, 1e-9, 1))) / m
 
 
 class SimpleNeuralNetwork(object):
