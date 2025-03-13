@@ -303,35 +303,16 @@ class NeuralNetwork(object):
 
         return loss
 
-    def train(self, X, y, epochs=1000, batch_size=32, verbose=True):
-        n_samples = X.shape[0]
+    def train(self, X, y, epochs=1000, verbose=True):
         loss_history = []
-
         for epoch in range(epochs):
-            indices = np.random.permutation(n_samples)
-            X_shuffled = X[indices]
-            y_shuffled = y[indices]
+            output = self.forward(X)
+            loss = MathFunctions.cross_entropy_loss(output, y)
+            loss_history.append(loss)
 
-            num_batches = int(np.ceil(n_samples / batch_size))
-            total_loss = 0
-
-            for batch in range(num_batches):
-                start_idx = batch * batch_size
-                end_idx = min((batch + 1) * batch_size, n_samples)
-
-                X_batch = X_shuffled[start_idx:end_idx]
-                y_batch = y_shuffled[start_idx:end_idx]
-
-                output = self.forward(X_batch)
-
-                batch_loss = self.backward(X_batch, y_batch, output)
-                total_loss += batch_loss
-
-            avg_loss = total_loss / num_batches
-            loss_history.append(avg_loss)
-
+            self.backward(X, y, output)
             if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
-                print(f"Епоха {epoch+1}/{epochs}, Втрата: {avg_loss:.6f}")
+                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.6f}")
 
         return loss_history
 
@@ -518,17 +499,6 @@ def plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_n
     plt.close()
 
 
-def evaluate_accuracy(model, X, y_true):
-    """Обчислення accuracy для переданих даних."""
-    predictions = model.forward(X)
-    predicted_classes = np.argmax(predictions, axis=1)
-    true_classes = np.argmax(y_true, axis=1)
-    return np.mean(predicted_classes == true_classes)
-
-
-# Функція для підбору швидкості навчання
-
-
 def find_best_learning_rate(
     model_class, X_train, y_train, X_val, y_val, learning_rates=[0.001, 0.01, 0.1, 1]
 ):
@@ -547,7 +517,7 @@ def find_best_learning_rate(
         model.train(
             X_train, y_train, X_val, y_val, epochs=10, model_name=f"Test_LR_{lr}"
         )
-        acc = evaluate_accuracy(model, X_val, y_val)
+        acc = model.evaluate(model, X_val, y_val)
         results[lr] = acc
 
         if acc > best_acc:
@@ -556,9 +526,6 @@ def find_best_learning_rate(
 
     print(f"Best learning rate: {best_lr} with accuracy: {best_acc:.4f}")
     return best_lr
-
-
-# Оновлення методу train у SimpleNeuralNetwork та MultiLayerPerceptron
 
 
 def train_with_logging(
@@ -577,8 +544,8 @@ def train_with_logging(
 
         losses_train.append(loss)
         losses_val.append(self.cross_entropy_loss(self.forward(X_val), y_val))
-        acc_train.append(evaluate_accuracy(self, X_train, y_train))
-        acc_val.append(evaluate_accuracy(self, X_val, y_val))
+        acc_train.append(self.evaluate(self, X_train, y_train))
+        acc_val.append(self.evaluate(self, X_val, y_val))
 
         print(
             f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.4f}, Train Acc: {acc_train[-1]:.4f}, Val Acc: {acc_val[-1]:.4f}"
@@ -636,7 +603,6 @@ if __name__ == "__main__":
         X_train,
         y_train,
         epochs=50,  # Зменшено кількість епох для демонстрації
-        batch_size=64,
         verbose=True,
     )
 
@@ -656,9 +622,7 @@ if __name__ == "__main__":
     )
 
     # Навчання моделі
-    relu_history = relu_model.train(
-        X_train, y_train, epochs=50, batch_size=64, verbose=True
-    )
+    relu_history = relu_model.train(X_train, y_train, epochs=50, verbose=True)
 
     # Обчислення точності
     train_accuracy = relu_model.evaluate(X_train, y_train)
@@ -676,9 +640,7 @@ if __name__ == "__main__":
     )
 
     # Навчання моделі
-    tanh_history = tanh_model.train(
-        X_train, y_train, epochs=50, batch_size=64, verbose=True
-    )
+    tanh_history = tanh_model.train(X_train, y_train, epochs=50, verbose=True)
 
     # Обчислення точності
     train_accuracy = tanh_model.evaluate(X_train, y_train)
