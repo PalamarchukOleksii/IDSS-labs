@@ -12,10 +12,12 @@ SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
 DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_DIRECTORY)
 
-TRAIN_TEST_SPLIT = 0.8
-USE_SEPARATE_DATASETS = False  # Set to True to use separate datasets (background and evaluation), False to mix them
-LEARNING_RATE = 1
-EPOCHS = 10
+TRAINING_DATASET_PART = "images_background"
+TESTING_DATASET_PART = "images_evaluation"
+
+LEARNING_RATE = 0.1
+EPOCHS = 1000
+LOAD_IMG_SIZE = (28, 28)
 
 
 def extract_dataset(
@@ -31,7 +33,7 @@ def extract_dataset(
     print(f"The archive has been successfully unpacked to {extract_path}")
 
 
-def load_images(root_dir):
+def load_images(root_dir, load_img_size=LOAD_IMG_SIZE):
     data = []
     targets = []
     classes = []
@@ -54,8 +56,8 @@ def load_images(root_dir):
                 for img_file in sorted(os.listdir(character_path)):
                     if img_file.endswith(".png"):
                         img_path = os.path.join(character_path, img_file)
-                        image = Image.open(img_path)
-                        image = image.resize((105, 105))  # Resize to a standard size
+                        image = Image.open(img_path).convert("L")
+                        image = image.resize(load_img_size)  # Resize to a standard size
 
                         # Convert to numpy array and normalize
                         img_array = np.array(image).astype(np.float32) / 255.0
@@ -91,59 +93,24 @@ def split_dataset(data, targets, test_size=0.2):
     )
 
 
-def prepare_omniglot_dataset():
+def prepare_omniglot_dataset(
+    training_dataset=TRAINING_DATASET_PART, test_dataset=TESTING_DATASET_PART
+):
     # First, extract the dataset if it hasn't been extracted yet
     if not os.path.exists(DATASET_EXTRACT_PATH):
         extract_dataset()
 
     # Check if the dataset structure follows the expected format
-    background_path = os.path.join(DATASET_EXTRACT_PATH, "images_background")
-    evaluation_path = os.path.join(DATASET_EXTRACT_PATH, "images_evaluation")
+    background_path = os.path.join(DATASET_EXTRACT_PATH, training_dataset)
+    evaluation_path = os.path.join(DATASET_EXTRACT_PATH, test_dataset)
 
-    if USE_SEPARATE_DATASETS:
-        # Use background for training and evaluation for validation
-        print(
-            "Using separate datasets for training (background) and validation (evaluation)"
-        )
-        train_data, train_targets, classes = load_images(background_path)
-        val_data, val_targets, _ = load_images(evaluation_path)
-        print(f"Training samples: {len(train_data)}")
-        print(f"Validation samples: {len(val_data)}")
-    else:
-        # Mix the data and split into 80% for training and 20% for validation
-        print(
-            "Mixing datasets (background and evaluation) and splitting into 80-20 for training-validation"
-        )
-
-        # Load data from both background and evaluation
-        train_data_bg, train_targets_bg, classes_bg = load_images(background_path)
-        val_data_eval, val_targets_eval, classes_eval = load_images(evaluation_path)
-
-        # Concatenate the data
-        full_data = np.concatenate([train_data_bg, val_data_eval], axis=0)
-        full_targets = np.concatenate([train_targets_bg, val_targets_eval], axis=0)
-        full_classes = list(set(classes_bg + classes_eval))  # Combine the class names
-
-        print(f"Total dataset samples: {len(full_data)}")
-
-        # Shuffle the data (random permutation)
-        shuffled_indices = np.random.permutation(len(full_data))
-        full_data = full_data[shuffled_indices]
-        full_targets = full_targets[shuffled_indices]
-
-        # Split the dataset into train and validation sets (80-20)
-        num_samples = len(full_data)
-        num_train_samples = int(num_samples * TRAIN_TEST_SPLIT)
-
-        train_data = full_data[:num_train_samples]
-        val_data = full_data[num_train_samples:]
-        train_targets = full_targets[:num_train_samples]
-        val_targets = full_targets[num_train_samples:]
-        classes = full_classes
-
-        print(
-            f"Split into {len(train_data)} training and {len(val_data)} validation samples"
-        )
+    print(
+        f'Using datasets "{training_dataset}" for training and dataset "{test_dataset}" for evaluation'
+    )
+    train_data, train_targets, classes = load_images(background_path)
+    val_data, val_targets, _ = load_images(evaluation_path)
+    print(f"Training samples: {len(train_data)}")
+    print(f"Validation samples: {len(val_data)}")
 
     return train_data, train_targets, val_data, val_targets, classes
 
@@ -184,11 +151,11 @@ class MathFunctions:
         return np.where(x > 0, 1, alpha)
 
     @staticmethod
-    def parametric_leaky_relu(x, alpha):
+    def parametric_leaky_relu(x, alpha=0.01):
         return np.where(x > 0, x, alpha * x)
 
     @staticmethod
-    def parametric_leaky_relu_derivative(x, alpha):
+    def parametric_leaky_relu_derivative(x, alpha=0.01):
         return np.where(x > 0, 1, alpha)
 
     @staticmethod
@@ -305,13 +272,19 @@ class NeuralNetwork(object):
 
     def train(self, X, y, epochs=1000, verbose=True):
         loss_history = []
+
         for epoch in range(epochs):
+            # Forward pass
             output = self.forward(X)
+
+            # Compute loss (cross-entropy)
             loss = MathFunctions.cross_entropy_loss(output, y)
             loss_history.append(loss)
 
+            # Backward pass and parameter update
             self.backward(X, y, output)
-            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
+
+            if verbose and (epoch % 1 == 0 or epoch == epochs - 1):
                 print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.6f}")
 
         return loss_history
@@ -593,16 +566,19 @@ if __name__ == "__main__":
     print("\n1. Тренування базової мережі з одним прихованим шаром (ReLU)...")
     basic_model = NeuralNetwork(
         input_size=input_size,
-        hidden_layers=[(128, "relu")],  # Один прихований шар із 128 нейронами
+        hidden_layers=[
+            (128, "elu"),
+            (128, "elu"),
+        ],  # Один прихований шар із 128 нейронами
         output_size=output_size,
-        learning_rate=0.001,  # Менша швидкість навчання для стабільності
+        learning_rate=LEARNING_RATE,  # Менша швидкість навчання для стабільності
     )
 
     # Навчання моделі
     basic_history = basic_model.train(
         X_train,
         y_train,
-        epochs=50,  # Зменшено кількість епох для демонстрації
+        epochs=1000,  # Зменшено кількість епох для демонстрації
         verbose=True,
     )
 
@@ -612,68 +588,68 @@ if __name__ == "__main__":
     print(f"Базова модель - Точність на тренувальних даних: {train_accuracy:.4f}")
     print(f"Базова модель - Точність на валідаційних даних: {val_accuracy:.4f}")
 
-    # 2. Мережа з двома прихованими шарами ReLU
-    print("\n2. Тренування мережі з двома прихованими шарами (ReLU)...")
-    relu_model = NeuralNetwork(
-        input_size=input_size,
-        hidden_layers=[(256, "relu"), (128, "relu")],  # Два приховані шари
-        output_size=output_size,
-        learning_rate=0.001,
-    )
+    # # 2. Мережа з двома прихованими шарами ReLU
+    # print("\n2. Тренування мережі з двома прихованими шарами (ReLU)...")
+    # relu_model = NeuralNetwork(
+    #     input_size=input_size,
+    #     hidden_layers=[(256, "relu"), (128, "relu")],  # Два приховані шари
+    #     output_size=output_size,
+    #     learning_rate=0.001,
+    # )
 
-    # Навчання моделі
-    relu_history = relu_model.train(X_train, y_train, epochs=50, verbose=True)
+    # # Навчання моделі
+    # relu_history = relu_model.train(X_train, y_train, epochs=50, verbose=True)
 
-    # Обчислення точності
-    train_accuracy = relu_model.evaluate(X_train, y_train)
-    val_accuracy = relu_model.evaluate(X_val, y_val)
-    print(f"ReLU модель - Точність на тренувальних даних: {train_accuracy:.4f}")
-    print(f"ReLU модель - Точність на валідаційних даних: {val_accuracy:.4f}")
+    # # Обчислення точності
+    # train_accuracy = relu_model.evaluate(X_train, y_train)
+    # val_accuracy = relu_model.evaluate(X_val, y_val)
+    # print(f"ReLU модель - Точність на тренувальних даних: {train_accuracy:.4f}")
+    # print(f"ReLU модель - Точність на валідаційних даних: {val_accuracy:.4f}")
 
-    # 3. Мережа з двома прихованими шарами tanh
-    print("\n3. Тренування мережі з двома прихованими шарами (tanh)...")
-    tanh_model = NeuralNetwork(
-        input_size=input_size,
-        hidden_layers=[(256, "tanh"), (128, "tanh")],  # Два приховані шари з tanh
-        output_size=output_size,
-        learning_rate=0.001,
-    )
+    # # 3. Мережа з двома прихованими шарами tanh
+    # print("\n3. Тренування мережі з двома прихованими шарами (tanh)...")
+    # tanh_model = NeuralNetwork(
+    #     input_size=input_size,
+    #     hidden_layers=[(256, "tanh"), (128, "tanh")],  # Два приховані шари з tanh
+    #     output_size=output_size,
+    #     learning_rate=0.001,
+    # )
 
-    # Навчання моделі
-    tanh_history = tanh_model.train(X_train, y_train, epochs=50, verbose=True)
+    # # Навчання моделі
+    # tanh_history = tanh_model.train(X_train, y_train, epochs=50, verbose=True)
 
-    # Обчислення точності
-    train_accuracy = tanh_model.evaluate(X_train, y_train)
-    val_accuracy = tanh_model.evaluate(X_val, y_val)
-    print(f"Tanh модель - Точність на тренувальних даних: {train_accuracy:.4f}")
-    print(f"Tanh модель - Точність на валідаційних даних: {val_accuracy:.4f}")
+    # # Обчислення точності
+    # train_accuracy = tanh_model.evaluate(X_train, y_train)
+    # val_accuracy = tanh_model.evaluate(X_val, y_val)
+    # print(f"Tanh модель - Точність на тренувальних даних: {train_accuracy:.4f}")
+    # print(f"Tanh модель - Точність на валідаційних даних: {val_accuracy:.4f}")
 
-    # Вибір функції активації
-    # activation_function = leaky_relu  # Використовується Leaky ReLU
-    # activation_function = parametric_leaky_relu  # Використовувати Parametric Leaky ReLU
-    activation_function = MathFunctions.elu  # Використовувати ELU
+    # # Вибір функції активації
+    # # activation_function = leaky_relu  # Використовується Leaky ReLU
+    # # activation_function = parametric_leaky_relu  # Використовувати Parametric Leaky ReLU
+    # activation_function = MathFunctions.elu  # Використовувати ELU
 
-    # Вибір найкращої швидкості навчання
-    best_lr = find_best_learning_rate(
-        SimpleNeuralNetwork, X_train, y_train, X_val, y_val
-    )
+    # # Вибір найкращої швидкості навчання
+    # best_lr = find_best_learning_rate(
+    #     SimpleNeuralNetwork, X_train, y_train, X_val, y_val
+    # )
 
-    # Simple Neural Network
-    simple_nn = SimpleNeuralNetwork(
-        input_size=input_size, hidden_size=128, output_size=output_size
-    )
-    print("Training Simple Neural Network...")
-    simple_nn.train(X_train, y_train)
-    measure_prediction_time(simple_nn, X_val[:1])
+    # # Simple Neural Network
+    # simple_nn = SimpleNeuralNetwork(
+    #     input_size=input_size, hidden_size=128, output_size=output_size
+    # )
+    # print("Training Simple Neural Network...")
+    # simple_nn.train(X_train, y_train)
+    # measure_prediction_time(simple_nn, X_val[:1])
 
-    # Multi-Layer Perceptron
-    mlp = MultiLayerPerceptron(
-        input_size=input_size,
-        hidden_layers=[128, 64],
-        output_size=output_size,
-        activation="relu",
-        learning_rate=3,
-    )
-    print("Training Multi-Layer Perceptron...")
-    mlp.train(X_train, y_train)
-    measure_prediction_time(mlp, X_val[:1])
+    # # Multi-Layer Perceptron
+    # mlp = MultiLayerPerceptron(
+    #     input_size=input_size,
+    #     hidden_layers=[128, 64],
+    #     output_size=output_size,
+    #     activation="relu",
+    #     learning_rate=3,
+    # )
+    # print("Training Multi-Layer Perceptron...")
+    # mlp.train(X_train, y_train)
+    # measure_prediction_time(mlp, X_val[:1])
