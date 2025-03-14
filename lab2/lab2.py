@@ -32,18 +32,13 @@ def extract_dataset(archive_path=DATASET_ARCHIVE_PATH, extract_path=SCRIPT_DIREC
 
 
 def load_dataset(csv_path, normalize=True, one_hot=True):
-    # Load the dataset
     data = pd.read_csv(csv_path)
+    X = data.iloc[:, 1:].values
+    y = data.iloc[:, 0].values
 
-    # Separate features and labels
-    X = data.iloc[:, 1:].values  # All columns except the first (features)
-    y = data.iloc[:, 0].values  # First column (labels)
-
-    # Normalize features if required
     if normalize:
         X = X / 255.0
 
-    # Convert labels to one-hot encoding if required
     if one_hot:
         y = np.array(y)
         num_classes = len(np.unique(y))
@@ -105,11 +100,19 @@ class MathFunctions:
 
 
 class NeuralNetwork(object):
-    def __init__(self, input_size, hidden_layers, output_size, learning_rate=0.01):
+    def __init__(
+        self,
+        input_size,
+        hidden_layers,
+        output_size,
+        model_name="model",
+        learning_rate=0.01,
+    ):
         self.input_size = input_size
         self.hidden_layers = hidden_layers
         self.output_size = output_size
         self.learning_rate = learning_rate
+        self.model_name = model_name
 
         self.activation_functions = {
             "relu": (MathFunctions.relu, MathFunctions.relu_derivative),
@@ -214,7 +217,6 @@ class NeuralNetwork(object):
         X_val,
         y_val,
         epochs=EPOCHS,
-        model_name="model",
         verbose=True,
     ):
         losses_train, losses_val = [], []
@@ -236,7 +238,9 @@ class NeuralNetwork(object):
                     f"Epoch {epoch+1}/{epochs}, Loss: {loss:.6f}, Train Acc: {acc_train[-1]:.4f}, Val Acc: {acc_val[-1]:.4f}"
                 )
 
-        plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name)
+        plot_training_progress(
+            losses_train, losses_val, acc_train, acc_val, self.model_name
+        )
 
     def predict(self, X):
         output = self.forward(X)
@@ -251,14 +255,12 @@ class NeuralNetwork(object):
 
 
 def plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name):
-    """Будує та зберігає графіки втрат та accuracy."""
     plots_dir = os.path.join(SCRIPT_DIRECTORY, "plots")
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
 
     epochs = range(1, len(losses_train) + 1)
 
-    # Графік втрат
     plt.figure()
     plt.plot(epochs, losses_train, label="Train Loss")
     plt.plot(epochs, losses_val, label="Validation Loss")
@@ -269,7 +271,6 @@ def plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_n
     plt.savefig(os.path.join(plots_dir, f"{model_name}_loss.png"))
     plt.close()
 
-    # Графік accuracy
     plt.figure()
     plt.plot(epochs, acc_train, label="Train Accuracy")
     plt.plot(epochs, acc_val, label="Validation Accuracy")
@@ -310,13 +311,24 @@ def find_best_learning_rate(
     return best_lr
 
 
-def measure_prediction_time(model, X_sample):
-    """Вимірює час надання прогнозу мережею."""
-    start_time = time.time()
-    model.forward(X_sample)
-    prediction_time = time.time() - start_time
-    print(f"Prediction time: {prediction_time:.6f} seconds")
-    return prediction_time
+class Timer:
+    def __init__(self):
+        self.start_time = 0
+        self.end_time = 0
+        self.elapsed_time = 0
+
+    def start(self):
+        self.start_time = time.time()
+
+    def stop(self):
+        self.end_time = time.time()
+        self.elapsed_time = self.end_time - self.start_time
+
+    def get_elapsed_time(self):
+        return self.elapsed_time
+
+    def print_elapsed_time(self, message=""):
+        print(f"Time taken for {message}: {self.elapsed_time:.4f} seconds")
 
 
 if __name__ == "__main__":
@@ -328,7 +340,7 @@ if __name__ == "__main__":
     input_size = X_train.shape[1]
     output_size = y_train.shape[1]
 
-    print("\n1. Тренування базової мережі з одним прихованим шаром (ReLU)...")
+    print("\n1. Training a basic network with one hidden layer (ReLU)...")
     basic_model = NeuralNetwork(
         input_size=input_size,
         hidden_layers=[(10, "relu")],
@@ -336,11 +348,20 @@ if __name__ == "__main__":
         learning_rate=LEARNING_RATE,
     )
 
-    # Навчання моделі
+    timer = Timer()
+    timer.start()
     basic_history = basic_model.train(X_train, y_train, X_test, y_test, epochs=1000)
+    timer.stop()
+    timer.print_elapsed_time("training")
 
-    # Обчислення точності на тренувальному та валідаційному наборах
+    timer.start()
     train_accuracy = basic_model.evaluate(X_train, y_train)
+    timer.stop()
+    timer.print_elapsed_time("train validation")
+    print(f"Basic model - Train Accuracy: {train_accuracy:.4f}")
+
+    timer.start()
     val_accuracy = basic_model.evaluate(X_test, y_test)
-    print(f"Базова модель - Точність на тренувальних даних: {train_accuracy:.4f}")
-    print(f"Базова модель - Точність на валідаційних даних: {val_accuracy:.4f}")
+    timer.stop()
+    timer.print_elapsed_time("test validation")
+    print(f"Basic model - Validation Accuracy: {val_accuracy:.4f}")
