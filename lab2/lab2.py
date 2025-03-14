@@ -1,118 +1,55 @@
 import zipfile
 import os
 import numpy as np
-from PIL import Image
 import matplotlib.pyplot as plt
+import pandas as pd
 import time
 
 DATASET_ARCHIVE = "dataset.zip"
 DATASET_DIRECTORY = "dataset"
+DATASET_NAME = "fashion-mnist"
 
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
 DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_DIRECTORY)
 
-TRAINING_DATASET_PART = "images_background"
-TESTING_DATASET_PART = "images_evaluation"
+TRAIN_CSV_FILE = os.path.join(DATASET_EXTRACT_PATH, f"{DATASET_NAME}_train.csv")
+TEST_CSV_FILE = os.path.join(DATASET_EXTRACT_PATH, f"{DATASET_NAME}_test.csv")
 
 LEARNING_RATE = 0.1
-EPOCHS = 1000
-LOAD_IMG_SIZE = (28, 28)
+EPOCHS = 100
 
 
-def extract_dataset(
-    archive_path=DATASET_ARCHIVE_PATH, extract_path=DATASET_EXTRACT_PATH
-):
+def extract_dataset(archive_path=DATASET_ARCHIVE_PATH, extract_path=SCRIPT_DIRECTORY):
     print("Starting to unpack the archive...")
     if not os.path.exists(extract_path):
         os.makedirs(extract_path)
 
-    with zipfile.ZipFile(archive_path, "r") as zip_ref:
+    with zipfile.ZipFile(archive_path) as zip_ref:
         zip_ref.extractall(extract_path)
 
     print(f"The archive has been successfully unpacked to {extract_path}")
 
 
-def load_images(root_dir, load_img_size=LOAD_IMG_SIZE):
-    data = []
-    targets = []
-    classes = []
-    class_to_idx = {}
+def load_dataset(csv_path, normalize=True, one_hot=True):
+    # Load the dataset
+    data = pd.read_csv(csv_path)
 
-    # Load classes (alphabets and characters)
-    for alphabet_dir in sorted(
-        [d for d in os.listdir(root_dir) if os.path.isdir(os.path.join(root_dir, d))]
-    ):
-        alphabet_path = os.path.join(root_dir, alphabet_dir)
-        for character_dir in sorted(os.listdir(alphabet_path)):
-            character_path = os.path.join(alphabet_path, character_dir)
-            if os.path.isdir(character_path):
-                class_name = f"{alphabet_dir}/{character_dir}"
-                class_idx = len(classes)
-                classes.append(class_name)
-                class_to_idx[class_name] = class_idx
+    # Separate features and labels
+    X = data.iloc[:, 1:].values  # All columns except the first (features)
+    y = data.iloc[:, 0].values  # First column (labels)
 
-                # Add all samples for this character
-                for img_file in sorted(os.listdir(character_path)):
-                    if img_file.endswith(".png"):
-                        img_path = os.path.join(character_path, img_file)
-                        image = Image.open(img_path).convert("L")
-                        image = image.resize(load_img_size)  # Resize to a standard size
+    # Normalize features if required
+    if normalize:
+        X = X / 255.0
 
-                        # Convert to numpy array and normalize
-                        img_array = np.array(image).astype(np.float32) / 255.0
+    # Convert labels to one-hot encoding if required
+    if one_hot:
+        y = np.array(y)
+        num_classes = len(np.unique(y))
+        y = np.eye(num_classes)[y]
 
-                        # Normalize to [-1, 1]
-                        img_array = (img_array - 0.5) / 0.5
-
-                        data.append(img_array)
-                        targets.append(class_idx)
-
-    data = np.array(data)
-    targets = np.array(targets)
-
-    print(f"Loaded {len(data)} images with shape {data[0].shape}")
-
-    return data, targets, classes
-
-
-def split_dataset(data, targets, test_size=0.2):
-    num_samples = len(data)
-    num_train_samples = int(num_samples * (1 - test_size))
-
-    indices = np.random.permutation(num_samples)
-
-    train_indices = indices[:num_train_samples]
-    val_indices = indices[num_train_samples:]
-
-    return (
-        data[train_indices],
-        targets[train_indices],
-        data[val_indices],
-        targets[val_indices],
-    )
-
-
-def prepare_omniglot_dataset(
-    training_dataset=TRAINING_DATASET_PART, test_dataset=TESTING_DATASET_PART
-):
-    # First, extract the dataset if it hasn't been extracted yet
-    if not os.path.exists(DATASET_EXTRACT_PATH):
-        extract_dataset()
-
-    # Check if the dataset structure follows the expected format
-    background_path = os.path.join(DATASET_EXTRACT_PATH, training_dataset)
-    evaluation_path = os.path.join(DATASET_EXTRACT_PATH, test_dataset)
-
-    print(
-        f'Using datasets "{training_dataset}" for training and dataset "{test_dataset}" for evaluation'
-    )
-    train_data, train_targets, classes = load_images(background_path)
-    val_data, val_targets, _ = load_images(evaluation_path)
-    print(f"Training samples: {len(train_data)}")
-    print(f"Validation samples: {len(val_data)}")
-
-    return train_data, train_targets, val_data, val_targets, classes
+    return X, y
 
 
 class MathFunctions:
@@ -270,24 +207,36 @@ class NeuralNetwork(object):
 
         return loss
 
-    def train(self, X, y, epochs=1000, verbose=True):
-        loss_history = []
+    def train(
+        self,
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        epochs=EPOCHS,
+        model_name="model",
+        verbose=True,
+    ):
+        losses_train, losses_val = [], []
+        acc_train, acc_val = [], []
 
         for epoch in range(epochs):
-            # Forward pass
-            output = self.forward(X)
+            output = self.forward(X_train)
+            loss = self.backward(X_train, y_train, output)
 
-            # Compute loss (cross-entropy)
-            loss = MathFunctions.cross_entropy_loss(output, y)
-            loss_history.append(loss)
+            losses_train.append(loss)
+            losses_val.append(
+                MathFunctions.cross_entropy_loss(self.forward(X_val), y_val)
+            )
+            acc_train.append(self.evaluate(X_train, y_train))
+            acc_val.append(self.evaluate(X_val, y_val))
 
-            # Backward pass and parameter update
-            self.backward(X, y, output)
+            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
+                print(
+                    f"Epoch {epoch+1}/{epochs}, Loss: {loss:.6f}, Train Acc: {acc_train[-1]:.4f}, Val Acc: {acc_val[-1]:.4f}"
+                )
 
-            if verbose and (epoch % 1 == 0 or epoch == epochs - 1):
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.6f}")
-
-        return loss_history
+        plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name)
 
     def predict(self, X):
         output = self.forward(X)
@@ -299,146 +248,6 @@ class NeuralNetwork(object):
         accuracy = np.mean(predictions == true_classes)
 
         return accuracy
-
-
-class SimpleNeuralNetwork(object):
-    def __init__(
-        self, input_size, hidden_size, output_size, learning_rate=LEARNING_RATE
-    ):
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.lr = learning_rate
-
-        # Ініціалізація вагів
-        self.weights_input_hidden = np.random.randn(input_size, hidden_size) * 0.01
-        self.weights_hidden_output = np.random.randn(hidden_size, output_size) * 0.01
-
-        # Ініціалізація зсувів
-        self.bias_hidden = np.zeros((1, hidden_size))
-        self.bias_output = np.zeros((1, output_size))
-
-    def forward(self, X):
-        # Пряме поширення через прихований шар з ReLU
-        self.hidden_input = np.dot(X, self.weights_input_hidden) + self.bias_hidden
-        self.hidden_output = MathFunctions.relu(self.hidden_input)
-
-        # Пряме поширення через вихідний шар з softmax
-        self.output_input = (
-            np.dot(self.hidden_output, self.weights_hidden_output) + self.bias_output
-        )
-        self.output = MathFunctions.softmax(self.output_input)
-        return self.output
-
-    def backward(self, X, y_true):
-        m = X.shape[0]
-        output_error = self.output - y_true
-        hidden_error = np.dot(
-            output_error, self.weights_hidden_output.T
-        ) * MathFunctions.relu_derivative(self.hidden_output)
-
-        # Оновлення вагів і зсувів
-        self.weights_hidden_output -= (
-            self.lr * np.dot(self.hidden_output.T, output_error) / m
-        )
-        self.bias_output -= self.lr * np.sum(output_error, axis=0, keepdims=True) / m
-        self.weights_input_hidden -= self.lr * np.dot(X.T, hidden_error) / m
-        self.bias_hidden -= self.lr * np.sum(hidden_error, axis=0, keepdims=True) / m
-
-    def train(self, X_train, y_train, epochs=EPOCHS):
-        for epoch in range(epochs):
-            outputs = self.forward(X_train)
-            loss = MathFunctions.cross_entropy_loss(outputs, y_train)
-            self.backward(X_train, y_train)
-            if epoch % 1 == 0:
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
-
-
-class MultiLayerPerceptron:
-    def __init__(
-        self,
-        input_size,
-        hidden_layers,
-        output_size,
-        activation="relu",
-        learning_rate=0.01,
-    ):
-        self.input_size = input_size
-        self.hidden_layers = hidden_layers
-        self.output_size = output_size
-        self.learning_rate = learning_rate
-
-        # Ініціалізація вагів і зсувів для всіх шарів
-        self.weights = []
-        self.biases = []
-        self.activations = []
-
-        layer_sizes = [input_size] + hidden_layers + [output_size]
-
-        for i in range(len(layer_sizes) - 1):
-            self.weights.append(
-                np.random.randn(layer_sizes[i], layer_sizes[i + 1]) * 0.01
-            )
-            self.biases.append(np.zeros((1, layer_sizes[i + 1])))
-
-            if i < len(hidden_layers):
-                if activation == "relu":
-                    self.activations.append(MathFunctions.relu)
-                elif activation == "tanh":
-                    self.activations.append(MathFunctions.tanh)
-            else:
-                self.activations.append(MathFunctions.softmax)
-
-    def forward(self, X):
-        self.layer_inputs = []  # Вхідні значення кожного шару перед активацією
-        self.layer_outputs = [X]  # Вихідні значення після активації
-
-        for i in range(len(self.weights)):
-            z = np.dot(self.layer_outputs[-1], self.weights[i]) + self.biases[i]
-            self.layer_inputs.append(z)
-            self.layer_outputs.append(self.activations[i](z))
-
-        return self.layer_outputs[-1]
-
-    def backward(self, X, y_true):
-        m = X.shape[0]
-        dL_dout = self.layer_outputs[-1] - y_true  # Градієнт на вихідному шарі
-        gradients_w = []
-        gradients_b = []
-
-        for i in reversed(range(len(self.weights))):
-            dL_db = np.sum(dL_dout, axis=0, keepdims=True) / m
-            dL_dw = np.dot(self.layer_outputs[i].T, dL_dout) / m
-
-            gradients_w.append(dL_dw)
-            gradients_b.append(dL_db)
-
-            if i > 0:
-                if self.activations[i - 1] == MathFunctions.relu:
-                    dL_dout = np.dot(
-                        dL_dout, self.weights[i].T
-                    ) * MathFunctions.relu_derivative(self.layer_inputs[i - 1])
-                elif self.activations[i - 1] == MathFunctions.tanh:
-                    dL_dout = np.dot(
-                        dL_dout, self.weights[i].T
-                    ) * MathFunctions.tanh_derivative(self.layer_inputs[i - 1])
-
-        # Оновлення вагів та зміщень
-        for i in range(len(self.weights)):
-            self.weights[i] -= (
-                self.learning_rate * gradients_w[len(self.weights) - 1 - i]
-            )
-            self.biases[i] -= (
-                self.learning_rate * gradients_b[len(self.weights) - 1 - i]
-            )
-
-    def train(self, X_train, y_train, epochs=10):
-        for epoch in range(epochs):
-            outputs = self.forward(X_train)
-            loss = MathFunctions.cross_entropy_loss(outputs, y_train)
-            self.backward(X_train, y_train)
-            if epoch % 1 == 0:
-                print(f"Epoch {epoch+1}/{epochs}, Loss: {loss:.4f}")
 
 
 def plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name):
@@ -501,37 +310,6 @@ def find_best_learning_rate(
     return best_lr
 
 
-def train_with_logging(
-    self, X_train, y_train, X_val, y_val, epochs=None, model_name="model"
-):
-    if epochs is None:
-        epochs = EPOCHS
-
-    losses_train, losses_val = [], []
-    acc_train, acc_val = [], []
-
-    for epoch in range(epochs):
-        outputs = self.forward(X_train)
-        loss = self.cross_entropy_loss(outputs, y_train)
-        self.backward(X_train, y_train)
-
-        losses_train.append(loss)
-        losses_val.append(self.cross_entropy_loss(self.forward(X_val), y_val))
-        acc_train.append(self.evaluate(self, X_train, y_train))
-        acc_val.append(self.evaluate(self, X_val, y_val))
-
-        print(
-            f"Epoch {epoch + 1}/{epochs}, Loss: {loss:.4f}, Train Acc: {acc_train[-1]:.4f}, Val Acc: {acc_val[-1]:.4f}"
-        )
-
-    plot_training_progress(losses_train, losses_val, acc_train, acc_val, model_name)
-
-
-# Додаємо новий метод до класів
-# SimpleNeuralNetwork.train = train_with_logging
-# MultiLayerPerceptron.train = train_with_logging
-
-
 def measure_prediction_time(model, X_sample):
     """Вимірює час надання прогнозу мережею."""
     start_time = time.time()
@@ -542,114 +320,27 @@ def measure_prediction_time(model, X_sample):
 
 
 if __name__ == "__main__":
-    # Process the dataset (викликається один раз)
-    train_data, train_targets, val_data, val_targets, classes = (
-        prepare_omniglot_dataset()
-    )
+    extract_dataset()
 
-    print(f"Number of classes: {len(classes)}")
-    print("Example sample:")
-    print(f"Train data shape: {train_data.shape}")
-    print(f"Validation data shape: {val_data.shape}")
-    print("Dataset preparation complete!")
+    X_train, y_train = load_dataset(TRAIN_CSV_FILE)
+    X_test, y_test = load_dataset(TEST_CSV_FILE)
 
-    input_size = train_data.shape[1] * train_data.shape[2]  # 105x105 -> 11025
-    output_size = len(classes)
+    input_size = X_train.shape[1]
+    output_size = y_train.shape[1]
 
-    # Підготовка даних для навчання
-    X_train = train_data.reshape(len(train_data), -1)
-    y_train = np.eye(output_size)[train_targets]  # One-hot encoding
-    X_val = val_data.reshape(len(val_data), -1)
-    y_val = np.eye(output_size)[val_targets]
-
-    # 1. Базова мережа з одним прихованим шаром ReLU
     print("\n1. Тренування базової мережі з одним прихованим шаром (ReLU)...")
     basic_model = NeuralNetwork(
         input_size=input_size,
-        hidden_layers=[
-            (128, "elu"),
-            (128, "elu"),
-        ],  # Один прихований шар із 128 нейронами
+        hidden_layers=[(10, "relu")],
         output_size=output_size,
-        learning_rate=LEARNING_RATE,  # Менша швидкість навчання для стабільності
+        learning_rate=LEARNING_RATE,
     )
 
     # Навчання моделі
-    basic_history = basic_model.train(
-        X_train,
-        y_train,
-        epochs=1000,  # Зменшено кількість епох для демонстрації
-        verbose=True,
-    )
+    basic_history = basic_model.train(X_train, y_train, X_test, y_test, epochs=1000)
 
     # Обчислення точності на тренувальному та валідаційному наборах
     train_accuracy = basic_model.evaluate(X_train, y_train)
-    val_accuracy = basic_model.evaluate(X_val, y_val)
+    val_accuracy = basic_model.evaluate(X_test, y_test)
     print(f"Базова модель - Точність на тренувальних даних: {train_accuracy:.4f}")
     print(f"Базова модель - Точність на валідаційних даних: {val_accuracy:.4f}")
-
-    # # 2. Мережа з двома прихованими шарами ReLU
-    # print("\n2. Тренування мережі з двома прихованими шарами (ReLU)...")
-    # relu_model = NeuralNetwork(
-    #     input_size=input_size,
-    #     hidden_layers=[(256, "relu"), (128, "relu")],  # Два приховані шари
-    #     output_size=output_size,
-    #     learning_rate=0.001,
-    # )
-
-    # # Навчання моделі
-    # relu_history = relu_model.train(X_train, y_train, epochs=50, verbose=True)
-
-    # # Обчислення точності
-    # train_accuracy = relu_model.evaluate(X_train, y_train)
-    # val_accuracy = relu_model.evaluate(X_val, y_val)
-    # print(f"ReLU модель - Точність на тренувальних даних: {train_accuracy:.4f}")
-    # print(f"ReLU модель - Точність на валідаційних даних: {val_accuracy:.4f}")
-
-    # # 3. Мережа з двома прихованими шарами tanh
-    # print("\n3. Тренування мережі з двома прихованими шарами (tanh)...")
-    # tanh_model = NeuralNetwork(
-    #     input_size=input_size,
-    #     hidden_layers=[(256, "tanh"), (128, "tanh")],  # Два приховані шари з tanh
-    #     output_size=output_size,
-    #     learning_rate=0.001,
-    # )
-
-    # # Навчання моделі
-    # tanh_history = tanh_model.train(X_train, y_train, epochs=50, verbose=True)
-
-    # # Обчислення точності
-    # train_accuracy = tanh_model.evaluate(X_train, y_train)
-    # val_accuracy = tanh_model.evaluate(X_val, y_val)
-    # print(f"Tanh модель - Точність на тренувальних даних: {train_accuracy:.4f}")
-    # print(f"Tanh модель - Точність на валідаційних даних: {val_accuracy:.4f}")
-
-    # # Вибір функції активації
-    # # activation_function = leaky_relu  # Використовується Leaky ReLU
-    # # activation_function = parametric_leaky_relu  # Використовувати Parametric Leaky ReLU
-    # activation_function = MathFunctions.elu  # Використовувати ELU
-
-    # # Вибір найкращої швидкості навчання
-    # best_lr = find_best_learning_rate(
-    #     SimpleNeuralNetwork, X_train, y_train, X_val, y_val
-    # )
-
-    # # Simple Neural Network
-    # simple_nn = SimpleNeuralNetwork(
-    #     input_size=input_size, hidden_size=128, output_size=output_size
-    # )
-    # print("Training Simple Neural Network...")
-    # simple_nn.train(X_train, y_train)
-    # measure_prediction_time(simple_nn, X_val[:1])
-
-    # # Multi-Layer Perceptron
-    # mlp = MultiLayerPerceptron(
-    #     input_size=input_size,
-    #     hidden_layers=[128, 64],
-    #     output_size=output_size,
-    #     activation="relu",
-    #     learning_rate=3,
-    # )
-    # print("Training Multi-Layer Perceptron...")
-    # mlp.train(X_train, y_train)
-    # measure_prediction_time(mlp, X_val[:1])
