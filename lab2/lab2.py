@@ -331,6 +331,39 @@ class Timer:
         print(f"Time taken for {message}: {self.elapsed_time:.4f} seconds")
 
 
+def plot_misclassified_images(model, X, y_true, num_images=10):
+    """Відображає та зберігає зображення, які були класифіковані невірно."""
+    predictions = model.predict(X)
+    true_labels = np.argmax(y_true, axis=1)
+    misclassified_indices = np.where(predictions != true_labels)[0]
+
+    if len(misclassified_indices) == 0:
+        print("No misclassified images found.")
+        return
+
+    num_images = min(num_images, len(misclassified_indices))
+    selected_indices = np.random.choice(misclassified_indices, num_images, replace=False)
+
+    plots_dir = os.path.join(SCRIPT_DIRECTORY, "plots")
+    if not os.path.exists(plots_dir):
+        os.makedirs(plots_dir)
+
+    plt.figure(figsize=(10, 5))
+    for i, idx in enumerate(selected_indices):
+        image = X[idx].reshape(28, 28)
+        plt.subplot(2, (num_images + 1) // 2, i + 1)
+        plt.imshow(image, cmap='gray')
+        plt.title(f"True: {true_labels[idx]}, Pred: {predictions[idx]}")
+        plt.axis('off')
+
+    plt.suptitle("Misclassified Images", fontsize=14)
+    plt.tight_layout(rect=[0.1, 0.1, 0.90, 0.95])
+
+    plt.savefig(os.path.join(plots_dir, f"{model.model_name}_misclassified.png"))
+    plt.close()
+
+
+
 if __name__ == "__main__":
     extract_dataset()
 
@@ -365,3 +398,5 @@ if __name__ == "__main__":
     timer.stop()
     timer.print_elapsed_time("test validation")
     print(f"Basic model - Validation Accuracy: {val_accuracy:.4f}")
+
+    plot_misclassified_images(basic_model, X_test, y_test, num_images=10)
