@@ -40,6 +40,7 @@ python -m venv .venv
 Each lab has its own `requirements.txt` file. To install dependencies for a specific lab, navigate to that lab's folder and install its requirements.
 
 For example, for `lab1`:
+
 ```bash
 cd lab1
 pip install -r requirements.txt
@@ -52,6 +53,7 @@ Repeat this for each lab as needed.
 Navigate to the folder of the lab you wish to run and execute the desired Python script.
 
 For example, for `lab1`:
+
 ```bash
 python lab1.py
 ```
@@ -65,4 +67,3 @@ Once you're done, deactivate the virtual environment:
 ```bash
 deactivate
 ```
-

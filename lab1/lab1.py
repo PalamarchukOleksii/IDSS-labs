@@ -148,7 +148,7 @@ def plot_3d_loss(trajectory, a, b, c, eta, filename):
 
 
 def plot_loss_vs_epoch(loss_values, eta, filename):
-    """Plot loss values over training epochs."""
+    """Plot loss values over training iterations."""
     fig = plt.figure(figsize=(8, 5))
     plt.plot(loss_values, label="E(w)")
     plt.xlabel("Epoch")
