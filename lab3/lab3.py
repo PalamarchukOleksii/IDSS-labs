@@ -22,6 +22,11 @@ TCS_STOCK_CSV_PATH = os.path.join(DATASET_EXTRACT_PATH, "tcs_stock.csv")
 DATASET_VARIANT = "a"
 B_DATASET_CSV = INFY_STOCK_CSV_PATH
 
+LEARNING_RATE = 0.01
+EPOCH = 100
+BATCH_SIZE = 32
+L1_LAMDA = 0.001
+
 
 def extract_dataset(archive_path, extract_path):
     """Extract dataset from zip archive to the specified directory."""
