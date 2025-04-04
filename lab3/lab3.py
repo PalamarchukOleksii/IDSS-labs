@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.gridspec import GridSpec
+import tensorflow as tf
 
 DATASET_ARCHIVE = "dataset.zip"
 DATASET_DIRECTORY = "dataset"
@@ -262,6 +263,25 @@ def plot_dataset(variant="a", b_dataset_csv_path=INFY_STOCK_CSV_PATH):
             raise ValueError(f"Invalid B dataset CSV path: {b_dataset_csv_path}")
     else:
         raise ValueError(f"Invalid dataset variant: {variant}")
+
+
+class PolynomialRegression(tf.keras.Model):
+    """A simple Polynomial Regression model using TensorFlow's Keras Model."""
+
+    def __init__(self, degree):
+        """Initialize the Polynomial Regression Model with L1 regularization."""
+        super().__init__()
+
+        self.degree = degree
+
+        self.w = tf.Variable(tf.random.normal(shape=(degree + 1, 1)), name="weights")
+        self.bias = tf.Variable(tf.zeros(shape=(1,)), name="bias")
+
+    def call(self, inputs):
+        """Perform forward pass for polynomial regression."""
+        x_poly = tf.concat([inputs**i for i in range(self.degree + 1)], axis=1)
+        predictions = tf.matmul(x_poly, self.w) + self.bias
+        return predictions
 
 
 if __name__ == "__main__":
