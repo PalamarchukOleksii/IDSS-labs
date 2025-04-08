@@ -266,22 +266,20 @@ def plot_dataset(variant="a", b_dataset_csv_path=INFY_STOCK_CSV_PATH):
 
 
 class PolynomialRegression(tf.keras.Model):
-    """A simple Polynomial Regression model using TensorFlow's Keras Model."""
-
+    
     def __init__(self, degree):
-        """Initialize the Polynomial Regression Model with L1 regularization."""
         super().__init__()
-
         self.degree = degree
-
-        self.w = tf.Variable(tf.random.normal(shape=(degree + 1, 1)), name="weights")
-        self.bias = tf.Variable(tf.zeros(shape=(1,)), name="bias")
-
+        self.poly_layer = tf.keras.layers.Lambda(
+            lambda x: tf.concat([x**i for i in range(degree + 1)], axis=1))
+        self.linear_layer = tf.keras.layers.Dense(
+            1, 
+            kernel_regularizer=tf.keras.regularizers.L1(L1_LAMDA),
+            bias_regularizer=tf.keras.regularizers.L1(L1_LAMDA))
+    
     def call(self, inputs):
-        """Perform forward pass for polynomial regression."""
-        x_poly = tf.concat([inputs**i for i in range(self.degree + 1)], axis=1)
-        predictions = tf.matmul(x_poly, self.w) + self.bias
-        return predictions
+        x_poly = self.poly_layer(inputs)
+        return self.linear_layer(x_poly)
 
 
 if __name__ == "__main__":
@@ -289,3 +287,55 @@ if __name__ == "__main__":
 
     x, y = get_dataset(variant=DATASET_VARIANT, b_dataset_csv_path=B_DATASET_CSV)
     x_train, y_train, x_test, y_test = prepare_dataset(x, y)
+    
+    # Reshape and convert data
+    x_train = x_train.reshape(-1, 1).astype('float32')
+    y_train = y_train.reshape(-1, 1).astype('float32')
+    x_test = x_test.reshape(-1, 1).astype('float32')
+    y_test = y_test.reshape(-1, 1).astype('float32')
+    
+    # Create and compile model
+    model = PolynomialRegression(degree=2)
+    model.compile(
+        optimizer=tf.keras.optimizers.SGD(learning_rate=LEARNING_RATE),
+        loss='mse',  # MSE + L1 regularization from the Dense layer
+        metrics=['mse']
+    )
+    
+    # Callback to print loss every 10 epochs
+    class PrintLossCallback(tf.keras.callbacks.Callback):
+        def on_epoch_end(self, epoch, logs=None):
+            if (epoch + 1) % 10 == 0:
+                print(f"Epoch {epoch + 1}/{EPOCH} - Loss: {logs['loss']:.4f} ")
+    
+    # Train the model with mini-batch gradient descent
+    history = model.fit(
+        x_train, y_train,
+        epochs=EPOCH,
+        batch_size=BATCH_SIZE,  # Mini-batch size
+        verbose=0,
+        callbacks=[PrintLossCallback()],
+        validation_data=(x_test, y_test)
+    )
+    
+    # Plot training loss with enhanced visualization
+    plt.figure(figsize=(12, 6))
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title(f'Model Loss (MSE with L1 Regularization, λ={L1_LAMDA})', fontsize=14)
+    plt.ylabel('Loss Value', fontsize=12)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Save plot with higher quality
+    plot_path = os.path.join(SCRIPT_DIRECTORY, 'polynomial_regression_loss.png')
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"\nTraining loss plot saved to: {plot_path}")
+    
+    # Evaluate on test set
+    test_loss, test_mse = model.evaluate(x_test, y_test, verbose=0)
+    print(f"\nFinal Test Results:")
+    print(f"- Total Loss (MSE + L1): {test_loss:.4f}")
+    print(f"- MSE Only: {test_mse:.4f}")
+    print(f"- L1 Regularization Term: {test_loss - test_mse:.4f}")
