@@ -15,6 +15,8 @@ SPLIT_RATIO = 0.8
 SCRIPT_DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 DATASET_ARCHIVE_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_ARCHIVE)
 DATASET_EXTRACT_PATH = os.path.join(SCRIPT_DIRECTORY, DATASET_DIRECTORY)
+CHECKPOINT_DIR = os.path.join(SCRIPT_DIRECTORY, "checkpoints")
+CHECKPOINT_PATH = os.path.join(CHECKPOINT_DIR, "model.weights.h5")
 
 INFY_STOCK_CSV_PATH = os.path.join(DATASET_EXTRACT_PATH, "infy_stock.csv")
 NIFTY_IT_INDEX_CSV_PATH = os.path.join(DATASET_EXTRACT_PATH, "nifty_it_index.csv")
@@ -264,19 +266,49 @@ def plot_dataset(variant="a", b_dataset_csv_path=INFY_STOCK_CSV_PATH):
     else:
         raise ValueError(f"Invalid dataset variant: {variant}")
 
+def tune_l1_lambda(x_train, y_train, x_val, y_val, lambdas, degree=2):
+    """Підбирає найкраще значення L1 регуляризації за допомогою валідаційної вибірки."""
+    results = []
+    for l1 in lambdas:
+        print(f"\nTraining with L1 λ = {l1}")
+        model = PolynomialRegression(degree=degree)
+        model.linear_layer.kernel_regularizer = tf.keras.regularizers.L1(l1)
+        model.linear_layer.bias_regularizer = tf.keras.regularizers.L1(l1)
+        model.compile(
+            optimizer=tf.keras.optimizers.SGD(learning_rate=LEARNING_RATE),
+            loss="mse",
+            metrics=["mse"]
+        )
+        _ = model(x_train[:1])
+        history = model.fit(
+            x_train, y_train,
+            epochs=EPOCH,
+            batch_size=BATCH_SIZE,
+            verbose=0,
+            validation_data=(x_val, y_val)
+        )
+        final_val_loss = history.history['val_loss'][-1]
+        print(f"λ = {l1} -> val_loss = {final_val_loss:.4f}")
+        results.append((l1, final_val_loss))
+
+    # Обрати найкращу λ
+    best_lambda = min(results, key=lambda x: x[1])[0]
+    print(f"\nBest L1 λ: {best_lambda}")
+    return best_lambda
+
 
 class PolynomialRegression(tf.keras.Model):
-    
+
     def __init__(self, degree):
         super().__init__()
         self.degree = degree
         self.poly_layer = tf.keras.layers.Lambda(
             lambda x: tf.concat([x**i for i in range(degree + 1)], axis=1))
         self.linear_layer = tf.keras.layers.Dense(
-            1, 
+            1,
             kernel_regularizer=tf.keras.regularizers.L1(L1_LAMDA),
             bias_regularizer=tf.keras.regularizers.L1(L1_LAMDA))
-    
+
     def call(self, inputs):
         x_poly = self.poly_layer(inputs)
         return self.linear_layer(x_poly)
@@ -287,52 +319,110 @@ if __name__ == "__main__":
 
     x, y = get_dataset(variant=DATASET_VARIANT, b_dataset_csv_path=B_DATASET_CSV)
     x_train, y_train, x_test, y_test = prepare_dataset(x, y)
-    
+
     # Reshape and convert data
     x_train = x_train.reshape(-1, 1).astype('float32')
     y_train = y_train.reshape(-1, 1).astype('float32')
     x_test = x_test.reshape(-1, 1).astype('float32')
     y_test = y_test.reshape(-1, 1).astype('float32')
-    
-    # Create and compile model
+
+    # Додаткове розбиття: train → train + validation
+    val_split = 0.2
+    val_size = int(len(x_train) * val_split)
+    x_val, y_val = x_train[:val_size], y_train[:val_size]
+    x_train2, y_train2 = x_train[val_size:], y_train[val_size:]
+
+    # Автоматичний підбір найкращого L1 λ
+    best_l1 = tune_l1_lambda(
+        x_train2, y_train2, x_val, y_val,
+        lambdas=[0.0, 0.0001, 0.001, 0.01, 0.1]
+    )
+
+    # Create and compile model with best L1 regularization
     model = PolynomialRegression(degree=2)
+    model.linear_layer.kernel_regularizer = tf.keras.regularizers.L1(best_l1)
+    model.linear_layer.bias_regularizer = tf.keras.regularizers.L1(best_l1)
     model.compile(
         optimizer=tf.keras.optimizers.SGD(learning_rate=LEARNING_RATE),
-        loss='mse',  # MSE + L1 regularization from the Dense layer
+        loss='mse',
         metrics=['mse']
     )
-    
+
     # Callback to print loss every 10 epochs
     class PrintLossCallback(tf.keras.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
             if (epoch + 1) % 10 == 0:
                 print(f"Epoch {epoch + 1}/{EPOCH} - Loss: {logs['loss']:.4f} ")
-    
+
+    # Ensure directory exists
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+    # Create callback for saving checkpoints
+    checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
+        filepath=CHECKPOINT_PATH,
+        save_weights_only=True,
+        save_best_only=True,
+        monitor='val_loss',
+        mode='min',
+        verbose=1
+    )
+
+    # Build model manually using sample input
+    _ = model(x_train[:1])  # Проганяємо один приклад для ініціалізації шарів
+
+    # Restore weights if checkpoint exists
+    if os.path.exists(CHECKPOINT_PATH):
+        model.load_weights(CHECKPOINT_PATH)
+        print(f"Model restored from checkpoint: {CHECKPOINT_PATH}")
+    else:
+        print("No checkpoint found. Training from scratch.")
+
+    # Learning rate adjustment based on validation loss
+    lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-5,
+        verbose=1
+    )
+
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        restore_best_weights=True,
+        verbose=1
+    )
+
     # Train the model with mini-batch gradient descent
     history = model.fit(
         x_train, y_train,
         epochs=EPOCH,
-        batch_size=BATCH_SIZE,  # Mini-batch size
+        batch_size=BATCH_SIZE,
         verbose=0,
-        callbacks=[PrintLossCallback()],
+        callbacks=[
+            PrintLossCallback(),
+            checkpoint_callback,
+            lr_scheduler,
+            early_stopping
+        ],
         validation_data=(x_test, y_test)
     )
-    
+
     # Plot training loss with enhanced visualization
     plt.figure(figsize=(12, 6))
     plt.plot(history.history['loss'], label='Training Loss')
     plt.plot(history.history['val_loss'], label='Validation Loss')
-    plt.title(f'Model Loss (MSE with L1 Regularization, λ={L1_LAMDA})', fontsize=14)
+    plt.title(f'Model Loss (MSE with L1 Regularization, λ={best_l1})', fontsize=14)
     plt.ylabel('Loss Value', fontsize=12)
     plt.xlabel('Epoch', fontsize=12)
     plt.legend()
     plt.grid(True, linestyle='--', alpha=0.7)
-    
+
     # Save plot with higher quality
     plot_path = os.path.join(SCRIPT_DIRECTORY, 'polynomial_regression_loss.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     print(f"\nTraining loss plot saved to: {plot_path}")
-    
+
     # Evaluate on test set
     test_loss, test_mse = model.evaluate(x_test, y_test, verbose=0)
     print(f"\nFinal Test Results:")
