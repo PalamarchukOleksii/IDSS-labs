@@ -67,3 +67,7 @@ Once you're done, deactivate the virtual environment:
 ```bash
 deactivate
 ```
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
