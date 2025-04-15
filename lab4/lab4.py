@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 from kaggle.api.kaggle_api_extended import KaggleApi
 from typing import Tuple, Optional, List
+import tensorflow as tf
 from tensorflow.keras import layers, models
 
 
@@ -64,6 +65,8 @@ class KaggleDataset:
 
         self.need_normalize = normalize
         self.need_shuffle = shuffle
+        self.is_normalized = False
+        self.is_shuffled = False
 
         self.__api.authenticate()
 
@@ -259,32 +262,39 @@ class CNNModel:
         self.use_batch_norm = use_batch_norm
         self.use_dropout = use_dropout
         self.dropout_rate = dropout_rate
+        self.model = None
 
-    def build_model(self) -> None:
-        self.model = models.Sequential()
+    def build(self) -> None:
+        inputs = layers.Input(shape=self.input_shape)
+        x = inputs
 
-        for _ in range(self.num_conv_layers):
-            self.model.add(
-                layers.Conv2D(
-                    self.conv_filters,
-                    self.kernel_size,
-                    strides=self.strides,
-                    padding=self.padding,
-                    activation="relu",
-                    input_shape=self.input_shape if _ == 0 else None,
-                )
-            )
+        for i in range(self.num_conv_layers):
+            x = layers.Conv2D(
+                self.conv_filters * (2**i),
+                self.kernel_size,
+                strides=self.strides,
+                padding=self.padding,
+                activation="relu",
+            )(x)
 
             if self.use_batch_norm:
-                self.model.add(layers.BatchNormalization())
+                x = layers.BatchNormalization()(x)
 
-            self.model.add(layers.MaxPooling2D((2, 2)))
+            x = layers.MaxPooling2D((2, 2))(x)
 
             if self.use_dropout:
-                self.model.add(layers.Dropout(self.dropout_rate))
+                x = layers.Dropout(self.dropout_rate)(x)
 
-        self.model.add(layers.Flatten())
-        self.model.add(layers.Dense(self.num_classes, activation="softmax"))
+        x = layers.Flatten()(x)
+
+        if self.dense_units > 0:
+            x = layers.Dense(self.dense_units, activation="relu")(x)
+            if self.use_dropout:
+                x = layers.Dropout(self.dropout_rate)(x)
+
+        outputs = layers.Dense(self.num_classes, activation="softmax")(x)
+
+        self.model = models.Model(inputs=inputs, outputs=outputs)
 
         self.model.compile(
             optimizer="adam",
@@ -292,15 +302,48 @@ class CNNModel:
             metrics=["accuracy"],
         )
 
-    def train(self, x_train: np.ndarray, y_train: np.ndarray, epochs: int = 5) -> None:
-        self.model.fit(x_train, y_train, epochs=epochs)
+        self.model.summary()
+
+    def train(
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        batch_size: int = 32,
+        epochs: int = 5,
+    ) -> None:
+        history = self.model.fit(
+            x_train,
+            y_train,
+            validation_data=validation_data,
+            batch_size=batch_size,
+            epochs=epochs,
+        )
+        return history
 
     def evaluate(self, x_test: np.ndarray, y_test: np.ndarray) -> Tuple[float, float]:
         loss, accuracy = self.model.evaluate(x_test, y_test)
         return loss, accuracy
 
 
+class Utils:
+    @staticmethod
+    def set_np_tf_seed(seed: int = 42) -> None:
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
+
+    @staticmethod
+    def set_tf_gpu() -> None:
+        physical_devices = tf.config.list_physical_devices("GPU")
+        if not physical_devices:
+            print("No GPU found. Using CPU instead.")
+            os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
+
 if __name__ == "__main__":
+    Utils.set_np_tf_seed()
+    Utils.set_tf_gpu()
+
     dataset_config = DatasetConfig.traffic_signs()
     dataset = KaggleDataset(dataset_config, auto_load=True)
 
@@ -309,14 +352,16 @@ if __name__ == "__main__":
         num_classes=dataset.get_num_of_classes(),
     )
 
-    model = cnn_model.build_model()
-
-    cnn_model.train(dataset.x_train, dataset.y_train)
+    cnn_model.build()
+    cnn_model.train(
+        dataset.x_train,
+        dataset.y_train,
+    )
 
     train_loss, train_acc = cnn_model.evaluate(dataset.x_train, dataset.y_train)
     test_loss, test_acc = cnn_model.evaluate(dataset.x_test, dataset.y_test)
 
-    print(f"Train accuracy: {train_acc}")
-    print(f"Traint loss: {train_loss}")
-    print(f"Test accuracy: {test_acc}")
-    print(f"Test loss: {test_loss}")
+    print(f"Train accuracy: {train_acc:.4f}")
+    print(f"Train loss: {train_loss:.4f}")
+    print(f"Test accuracy: {test_acc:.4f}")
+    print(f"Test loss: {test_loss:.4f}")
