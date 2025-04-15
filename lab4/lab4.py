@@ -3,16 +3,11 @@ import pandas as pd
 import pickle
 import numpy as np
 from kaggle.api.kaggle_api_extended import KaggleApi
-from typing import Dict, Tuple, Optional, Any, List
-import tensorflow as tf
+from typing import Tuple, Optional, List
 from tensorflow.keras import layers, models
 
 
 class DatasetConfig:
-    # Simplified assumption:
-    # - CSV datasets always have separate files with labels in the same file
-    # - Pickle datasets always have one file with already separated data
-
     def __init__(
         self,
         name: str,
@@ -231,11 +226,11 @@ class KaggleDataset:
 
         return x_train, y_train, x_test, y_test
 
-    def get_sample_shape() -> Tuple[int, int, int]:
-        return dataset.x_train.shape[1:]
+    def get_sample_shape(self) -> Tuple[int, int, int]:
+        return self.x_train.shape[1:]
 
-    def get_num_of_classes() -> int:
-        return len(np.unique(dataset.y_train))
+    def get_num_of_classes(self) -> int:
+        return len(np.unique(self.y_train))
 
 
 class CNNModel:
@@ -308,9 +303,6 @@ class CNNModel:
 if __name__ == "__main__":
     dataset_config = DatasetConfig.traffic_signs()
     dataset = KaggleDataset(dataset_config, auto_load=True)
-
-    print(f"Train shape: {dataset.x_train.shape}, {dataset.y_train.shape}")
-    print(f"Test shape: {dataset.x_test.shape}, {dataset.y_test.shape}")
 
     cnn_model = CNNModel(
         input_shape=dataset.get_sample_shape(),
