@@ -4,6 +4,8 @@ import pickle
 import numpy as np
 from kaggle.api.kaggle_api_extended import KaggleApi
 from typing import Dict, Tuple, Optional, Any, List
+import tensorflow as tf
+from tensorflow.keras import layers, models
 
 
 class DatasetConfig:
@@ -229,6 +231,62 @@ class KaggleDataset:
 
         return x_train, y_train, x_test, y_test
 
+    def get_sample_shape() -> Tuple[int, int, int]:
+        return dataset.x_train.shape[1:]
+
+    def get_num_of_classes() -> int:
+        return len(np.unique(dataset.y_train))
+
+
+class CNNModel:
+    def __init__(
+        self,
+        input_shape: Tuple[int, int, int],
+        num_classes: int,
+        conv_filters: int = 32,
+        kernel_size: Tuple[int, int] = (3, 3),
+        strides: Tuple[int, int] = (1, 1),
+        padding: str = "valid",
+        dense_units: int = 64,
+    ):
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.conv_filters = conv_filters
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.padding = padding
+        self.dense_units = dense_units
+
+    def build_model(self) -> None:
+        self.model = models.Sequential()
+        self.model.add(
+            layers.Conv2D(
+                self.conv_filters,
+                self.kernel_size,
+                strides=self.strides,
+                padding=self.padding,
+                activation="relu",
+                input_shape=self.input_shape,
+            )
+        )
+        self.model.add(layers.MaxPooling2D((2, 2)))
+        self.model.add(layers.Flatten())
+        self.model.add(layers.Dense(self.dense_units, activation="relu"))
+        self.model.add(layers.Dense(self.num_classes, activation="softmax"))
+
+        self.model.compile(
+            optimizer="adam",
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"],
+        )
+
+    def train(self, x_train: np.ndarray, y_train: np.ndarray, epochs: int = 5) -> None:
+        self.model.fit(x_train, y_train, epochs=epochs)
+
+    def evaluate(self, x_test: np.ndarray, y_test: np.ndarray) -> Tuple[float, float]:
+        loss, accuracy = self.model.evaluate(x_test, y_test)
+        return loss, accuracy
+
 
 if __name__ == "__main__":
     dataset_config = DatasetConfig.traffic_signs()
@@ -236,3 +294,20 @@ if __name__ == "__main__":
 
     print(f"Train shape: {dataset.x_train.shape}, {dataset.y_train.shape}")
     print(f"Test shape: {dataset.x_test.shape}, {dataset.y_test.shape}")
+
+    cnn_model = CNNModel(
+        input_shape=dataset.get_sample_shape(),
+        num_classes=dataset.get_num_of_classes(),
+    )
+
+    model = cnn_model.build_model()
+
+    cnn_model.train(dataset.x_train, dataset.y_train)
+
+    train_loss, train_acc = cnn_model.evaluate(dataset.x_train, dataset.y_train)
+    test_loss, test_acc = cnn_model.evaluate(dataset.x_test, dataset.y_test)
+
+    print(f"Train accuracy: {train_acc}")
+    print(f"Traint loss: {train_loss}")
+    print(f"Test accuracy: {test_acc}")
+    print(f"Test loss: {test_loss}")
