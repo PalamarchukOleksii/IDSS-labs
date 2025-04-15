@@ -91,7 +91,7 @@ class KaggleDataset:
             else:
                 raise ValueError("Unsupported data shape for CNN.")
 
-            return x_data, y_data
+            return x_data, y_data.to_numpy().flatten()
         else:
             raise KeyError(f"Label column '{labels_column}' not found in the CSV file.")
 
@@ -127,6 +127,23 @@ class KaggleDataset:
             )
 
 
+class DataUtils:
+    @staticmethod
+    def shuffle_data(x_data, y_data):
+        indices = np.random.permutation(len(x_data))
+
+        shuffled_x = x_data[indices]
+        shuffled_y = y_data[indices]
+
+        return shuffled_x, shuffled_y
+
+    @staticmethod
+    def normalize_image_data(x_data):
+        normalized_data = x_data / 255.0
+
+        return normalized_data
+
+
 if __name__ == "__main__":
     NON_COLORED_DATASET = {
         "name": "zalando-research/fashionmnist",
@@ -145,8 +162,12 @@ if __name__ == "__main__":
     downloader = KaggleDataset(dataset_config["name"])
     downloader.download()
 
-    x_df, y_df = downloader.get_data(
-        dataset_config["test_filename"], labels_column=dataset_config["labels_column"]
+    x_train, y_train = downloader.get_data(
+        dataset_config["train_filename"], labels_column=dataset_config["labels_column"]
     )
-    print(x_df)
-    print(y_df)
+
+    x_train, y_train = DataUtils.shuffle_data(x_train, y_train)
+    x_train = DataUtils.normalize_image_data(x_train)
+
+    print(x_train)
+    print(y_train)
