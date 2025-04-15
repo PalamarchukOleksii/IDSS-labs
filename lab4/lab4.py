@@ -1,11 +1,12 @@
 import os
-import pandas as pd
+import sys
 import pickle
 import numpy as np
-from kaggle.api.kaggle_api_extended import KaggleApi
-from typing import Tuple, Optional, List
+import pandas as pd
 import tensorflow as tf
+from typing import Tuple, Optional, List, Dict
 from tensorflow.keras import layers, models
+from kaggle.api.kaggle_api_extended import KaggleApi
 
 
 class DatasetConfig:
@@ -48,7 +49,7 @@ class KaggleDataset:
         self,
         config: DatasetConfig,
         download_dir: str = "dataset",
-        auto_load: bool = False,
+        auto_load: bool = True,
         normalize: bool = True,
         shuffle: bool = True,
     ):
@@ -330,7 +331,10 @@ class Utils:
     @staticmethod
     def set_np_tf_seed(seed: int = 42) -> None:
         np.random.seed(seed)
+        print(f"NumPy seed set to {seed}")
+
         tf.random.set_seed(seed)
+        print(f"TensorFlow seed set to {seed}")
 
     @staticmethod
     def set_tf_gpu() -> None:
@@ -339,17 +343,81 @@ class Utils:
             print("No GPU found. Using CPU instead.")
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
+    @staticmethod
+    def get_dataset_config(dataset_type: str) -> Dict:
+        if dataset_type == "colored":
+            print(f"Dataset set to: traffic-signs-preprocessed")
+            return DatasetConfig.traffic_signs()
+        elif dataset_type == "non_colored":
+            print(f"Dataset set to: fashionmnist")
+            return DatasetConfig.fashion_mnist()
+        else:
+            print(f"Invalid dataset type: {dataset_type}")
+            raise ValueError(f"Invalid dataset type: {dataset_type}")
+
+
+class OutputLogger:
+    def __init__(
+        self, log_to_file_flag, output_directory="outputs", log_filename="output.txt"
+    ):
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        self._log_to_file = log_to_file_flag
+        self._output_dir = output_directory
+        self._log_dir_path = os.path.join(script_dir, output_directory)
+        self._log_file_path = os.path.join(self._log_dir_path, log_filename)
+
+        self._original_stdout = sys.stdout
+        self._log_file = None
+
+    def start(self):
+        if not self._log_to_file:
+            print("Logging to file is disabled.")
+            return
+
+        if self._log_file:
+            print("Logging has already started.")
+            return
+
+        os.makedirs(self._log_dir_path, exist_ok=True)
+        self._log_file = open(self._log_file_path, "w")
+        print(f"Logging output to {self._log_file_path}...")
+        sys.stdout = self._log_file
+
+    def stop(self):
+        if not self._log_to_file:
+            return
+
+        if self._log_file:
+            sys.stdout = self._original_stdout
+            self._log_file.close()
+            print(f"All output was logged to {self._log_file_path}")
+            self._log_file = None
+
+    def __del__(self):
+        self.stop()
+
 
 if __name__ == "__main__":
+    LOG_TO_FILE = True
+
+    DATASET_TYPE = "colored"
+    # DATASET_TYPE = "non_colored"
+
+    logger = OutputLogger(LOG_TO_FILE)
+    logger.start()
+
     Utils.set_np_tf_seed()
     Utils.set_tf_gpu()
 
-    dataset_config = DatasetConfig.traffic_signs()
-    dataset = KaggleDataset(dataset_config, auto_load=True)
+    dataset_config = Utils.get_dataset_config(DATASET_TYPE)
+
+    print(dataset_config)
+    dataset = KaggleDataset(dataset_config)
 
     cnn_model = CNNModel(
-        input_shape=dataset.get_sample_shape(),
-        num_classes=dataset.get_num_of_classes(),
+        dataset.get_sample_shape(),
+        dataset.get_num_of_classes(),
     )
 
     cnn_model.build()
@@ -365,3 +433,5 @@ if __name__ == "__main__":
     print(f"Train loss: {train_loss:.4f}")
     print(f"Test accuracy: {test_acc:.4f}")
     print(f"Test loss: {test_loss:.4f}")
+
+    logger.stop()
