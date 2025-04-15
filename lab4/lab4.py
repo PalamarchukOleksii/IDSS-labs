@@ -7,6 +7,10 @@ from typing import Dict, Tuple, Optional, Any, List
 
 
 class DatasetConfig:
+    # Simplified assumption:
+    # - CSV datasets always have separate files with labels in the same file
+    # - Pickle datasets always have one file with already separated data
+
     def __init__(
         self,
         name: str,
@@ -23,10 +27,6 @@ class DatasetConfig:
         self.combined_filename = combined_filename
         self.labels_column = labels_column
 
-        # Simplified assumption:
-        # - CSV datasets always have separate files with labels in the same file
-        # - Pickle datasets always have one file with already separated data
-
     @classmethod
     def fashion_mnist(cls) -> "DatasetConfig":
         return cls(
@@ -34,7 +34,6 @@ class DatasetConfig:
             file_type="csv",
             train_filename="fashion-mnist_train.csv",
             test_filename="fashion-mnist_test.csv",
-            labels_column="label",
         )
 
     @classmethod
@@ -52,6 +51,8 @@ class KaggleDataset:
         config: DatasetConfig,
         download_dir: str = "dataset",
         auto_load: bool = False,
+        normalize: bool = True,
+        shuffle: bool = True,
     ):
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -64,8 +65,8 @@ class KaggleDataset:
         self.x_test = None
         self.y_test = None
 
-        self.is_normalized = False
-        self.is_shuffled = False
+        self.need_normalize = normalize
+        self.need_shuffle = shuffle
 
         self.__api.authenticate()
 
@@ -101,7 +102,7 @@ class KaggleDataset:
                 files.append(os.path.join(root, f))
         return files
 
-    def load_all_data(self, normalize: bool = False, shuffle: bool = False) -> None:
+    def load_all_data(self) -> None:
         if self.config.file_type == "csv":
             self.x_train, self.y_train = self.__load_csv_file("train")
             self.x_test, self.y_test = self.__load_csv_file("test")
@@ -112,10 +113,10 @@ class KaggleDataset:
         else:
             raise ValueError(f"Unsupported file type: {self.config.file_type}")
 
-        if normalize:
+        if self.need_normalize:
             self.normalize()
 
-        if shuffle:
+        if self.need_shuffle:
             self.shuffle()
 
         print(f"Train data loaded: {self.x_train.shape}, {self.y_train.shape}")
@@ -212,7 +213,11 @@ class KaggleDataset:
 
         for x_data_name, x_data in [("x_train", x_train), ("x_test", x_test)]:
             if len(x_data.shape) == 4:
-                pass
+                if x_data.shape[-1] > 3:
+                    if x_data_name == "x_train":
+                        x_train = np.transpose(x_data, (0, 2, 3, 1))
+                    else:
+                        x_test = np.transpose(x_data, (0, 2, 3, 1))
             elif len(x_data.shape) == 3:
                 height = int(np.sqrt(x_data.shape[1]))
                 if x_data_name == "x_train":
@@ -228,8 +233,6 @@ class KaggleDataset:
 if __name__ == "__main__":
     dataset_config = DatasetConfig.traffic_signs()
     dataset = KaggleDataset(dataset_config, auto_load=True)
-    dataset.normalize()
-    dataset.shuffle()
 
     print(f"Train shape: {dataset.x_train.shape}, {dataset.y_train.shape}")
     print(f"Test shape: {dataset.x_test.shape}, {dataset.y_test.shape}")
