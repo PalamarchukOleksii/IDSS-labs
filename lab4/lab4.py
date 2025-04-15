@@ -246,8 +246,12 @@ class CNNModel:
         conv_filters: int = 32,
         kernel_size: Tuple[int, int] = (3, 3),
         strides: Tuple[int, int] = (1, 1),
-        padding: str = "valid",
+        padding: str = "same",
         dense_units: int = 64,
+        num_conv_layers: int = 1,
+        use_batch_norm: bool = False,
+        use_dropout: bool = False,
+        dropout_rate: float = 0.5,
     ):
         self.input_shape = input_shape
         self.num_classes = num_classes
@@ -256,22 +260,35 @@ class CNNModel:
         self.strides = strides
         self.padding = padding
         self.dense_units = dense_units
+        self.num_conv_layers = num_conv_layers
+        self.use_batch_norm = use_batch_norm
+        self.use_dropout = use_dropout
+        self.dropout_rate = dropout_rate
 
     def build_model(self) -> None:
         self.model = models.Sequential()
-        self.model.add(
-            layers.Conv2D(
-                self.conv_filters,
-                self.kernel_size,
-                strides=self.strides,
-                padding=self.padding,
-                activation="relu",
-                input_shape=self.input_shape,
+
+        for _ in range(self.num_conv_layers):
+            self.model.add(
+                layers.Conv2D(
+                    self.conv_filters,
+                    self.kernel_size,
+                    strides=self.strides,
+                    padding=self.padding,
+                    activation="relu",
+                    input_shape=self.input_shape if _ == 0 else None,
+                )
             )
-        )
-        self.model.add(layers.MaxPooling2D((2, 2)))
+
+            if self.use_batch_norm:
+                self.model.add(layers.BatchNormalization())
+
+            self.model.add(layers.MaxPooling2D((2, 2)))
+
+            if self.use_dropout:
+                self.model.add(layers.Dropout(self.dropout_rate))
+
         self.model.add(layers.Flatten())
-        self.model.add(layers.Dense(self.dense_units, activation="relu"))
         self.model.add(layers.Dense(self.num_classes, activation="softmax"))
 
         self.model.compile(
