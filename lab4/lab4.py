@@ -3,19 +3,77 @@ import pandas as pd
 import pickle
 import numpy as np
 from kaggle.api.kaggle_api_extended import KaggleApi
+from typing import Dict, Tuple, Optional, Any, List
+
+
+class DatasetConfig:
+    def __init__(
+        self,
+        name: str,
+        file_type: str,
+        train_filename: Optional[str] = None,
+        test_filename: Optional[str] = None,
+        combined_filename: Optional[str] = None,
+        labels_column: str = "label",
+    ):
+        self.name = name
+        self.file_type = file_type
+        self.train_filename = train_filename
+        self.test_filename = test_filename
+        self.combined_filename = combined_filename
+        self.labels_column = labels_column
+
+        # Simplified assumption:
+        # - CSV datasets always have separate files with labels in the same file
+        # - Pickle datasets always have one file with already separated data
+
+    @classmethod
+    def fashion_mnist(cls) -> "DatasetConfig":
+        return cls(
+            name="zalando-research/fashionmnist",
+            file_type="csv",
+            train_filename="fashion-mnist_train.csv",
+            test_filename="fashion-mnist_test.csv",
+            labels_column="label",
+        )
+
+    @classmethod
+    def traffic_signs(cls) -> "DatasetConfig":
+        return cls(
+            name="valentynsichkar/traffic-signs-preprocessed",
+            file_type="pickle",
+            combined_filename="data0.pickle",
+        )
 
 
 class KaggleDataset:
-    def __init__(self, dataset_name: str, download_dir: str = "dataset"):
+    def __init__(
+        self,
+        config: DatasetConfig,
+        download_dir: str = "dataset",
+        auto_load: bool = False,
+    ):
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
-        self.__dataset_name = dataset_name
-        self.__download_path = os.path.join(script_dir, download_dir, dataset_name)
+        self.config = config
+        self.__download_path = os.path.join(script_dir, download_dir, config.name)
         self.__api = KaggleApi()
+
+        self.x_train = None
+        self.y_train = None
+        self.x_test = None
+        self.y_test = None
+
+        self.is_normalized = False
+        self.is_shuffled = False
 
         self.__api.authenticate()
 
-    def download(self, unzip: bool = True):
+        if auto_load:
+            self.download()
+            self.load_all_data()
+
+    def download(self, unzip: bool = True) -> None:
         if (
             os.listdir(self.__download_path)
             if os.path.exists(self.__download_path)
@@ -27,37 +85,74 @@ class KaggleDataset:
         if not os.path.exists(self.__download_path):
             os.makedirs(self.__download_path)
 
-        print(f"Downloading dataset: {self.__dataset_name}")
+        print(f"Downloading dataset: {self.config.name}")
         print(f"Saving to: {self.__download_path}")
         self.__api.dataset_download_files(
-            dataset=self.__dataset_name,
+            dataset=self.config.name,
             path=self.__download_path,
             unzip=unzip,
         )
         print("Download complete.")
 
-    def list_files(self):
+    def list_files(self) -> List[str]:
         files = []
         for root, _, filenames in os.walk(self.__download_path):
             for f in filenames:
                 files.append(os.path.join(root, f))
         return files
 
-    def get_data(
-        self, filename: str, data_type: str = "train", labels_column: str = "labels"
-    ) -> tuple[np.ndarray, np.ndarray]:
+    def load_all_data(self, normalize: bool = False, shuffle: bool = False) -> None:
+        if self.config.file_type == "csv":
+            self.x_train, self.y_train = self.__load_csv_file("train")
+            self.x_test, self.y_test = self.__load_csv_file("test")
+        elif self.config.file_type == "pickle":
+            self.x_train, self.y_train, self.x_test, self.y_test = (
+                self.__load_pickle_file()
+            )
+        else:
+            raise ValueError(f"Unsupported file type: {self.config.file_type}")
+
+        if normalize:
+            self.normalize()
+
+        if shuffle:
+            self.shuffle()
+
+        print(f"Train data loaded: {self.x_train.shape}, {self.y_train.shape}")
+        print(f"Test data loaded: {self.x_test.shape}, {self.y_test.shape}")
+
+    def normalize(self) -> None:
+        if self.x_train is not None:
+            self.x_train = self.x_train / 255.0
+        if self.x_test is not None:
+            self.x_test = self.x_test / 255.0
+        self.is_normalized = True
+        print("Data normalized")
+
+    def shuffle(self) -> None:
+        if self.x_train is not None and self.y_train is not None:
+            indices = np.random.permutation(len(self.x_train))
+            self.x_train = self.x_train[indices]
+            self.y_train = self.y_train[indices]
+
+        if self.x_test is not None and self.y_test is not None:
+            indices = np.random.permutation(len(self.x_test))
+            self.x_test = self.x_test[indices]
+            self.y_test = self.y_test[indices]
+
+        self.is_shuffled = True
+        print("Data shuffled")
+
+    def __load_csv_file(self, data_type: str) -> tuple[np.ndarray, np.ndarray]:
+        if data_type == "train":
+            filename = self.config.train_filename
+        elif data_type == "test":
+            filename = self.config.test_filename
+        else:
+            raise ValueError(f"Unsupported data type: {data_type}")
+
         if not filename:
-            file_extensions = [".pickle", ".csv"]
-            for ext in file_extensions:
-                potential_filename = f"{data_type}{ext}"
-                file_path = os.path.join(self.__download_path, potential_filename)
-                if os.path.exists(file_path):
-                    filename = potential_filename
-                    break
-            else:
-                raise FileNotFoundError(
-                    f"No file found with name {data_type} in {self.__download_path}."
-                )
+            raise ValueError(f"No {data_type} filename specified in config")
 
         file_path = os.path.join(self.__download_path, filename)
         if not os.path.exists(file_path):
@@ -65,25 +160,12 @@ class KaggleDataset:
                 f"File {filename} not found in {self.__download_path}"
             )
 
-        file_extension = filename.split(".")[-1]
-
-        if file_extension == "csv":
-            return self.__get_csv_data(file_path, labels_column)
-        elif file_extension == "pickle":
-            return self.__get_pickle_data(file_path, data_type)
-        else:
-            raise ValueError(f"Unsupported file format: {file_extension}")
-
-    def __get_csv_data(
-        self, file_path: str, labels_column: str = "labels"
-    ) -> tuple[np.ndarray, np.ndarray]:
         print(f"Loading CSV data from {file_path}")
-
         df = pd.read_csv(file_path)
 
-        if labels_column in df.columns:
-            x_data = df.drop(columns=[labels_column])
-            y_data = df[[labels_column]]
+        if self.config.labels_column in df.columns:
+            x_data = df.drop(columns=[self.config.labels_column])
+            y_data = df[[self.config.labels_column]]
 
             if len(x_data.shape) == 2:
                 height = int(np.sqrt(x_data.shape[1]))
@@ -93,81 +175,61 @@ class KaggleDataset:
 
             return x_data, y_data.to_numpy().flatten()
         else:
-            raise KeyError(f"Label column '{labels_column}' not found in the CSV file.")
+            raise KeyError(
+                f"Label column '{self.config.labels_column}' not found in the CSV file."
+            )
 
-    def __get_pickle_data(
-        self, file_path: str, data_type: str = "train"
-    ) -> tuple[np.ndarray, np.ndarray]:
-        print(f"Loading Pickle data from {file_path}")
+    def __load_pickle_file(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        if not self.config.combined_filename:
+            raise ValueError("No combined filename specified in config")
+
+        file_path = os.path.join(self.__download_path, self.config.combined_filename)
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(
+                f"File {self.config.combined_filename} not found in {self.__download_path}"
+            )
+
+        print(f"Loading pickle data from {file_path}")
         with open(file_path, "rb") as f:
             data = pickle.load(f)
 
-        if isinstance(data, dict):
-            x_key = f"x_{data_type}"
-            y_key = f"y_{data_type}"
-
-            if x_key in data and y_key in data:
-                x_data = data[x_key]
-                y_data = data[y_key]
-
-                if len(x_data.shape) == 4:
-                    pass
-                elif len(x_data.shape) == 3:
-                    height = int(np.sqrt(x_data.shape[1]))
-                    x_data = x_data.values.reshape(x_data.shape[0], height, height, 1)
-                else:
-                    raise ValueError("Unsupported data shape.")
-
-                return x_data, y_data
-            else:
-                raise KeyError(f"Data type '{data_type}' not found in the pickle file.")
-        else:
+        if not isinstance(data, dict):
             raise ValueError(
                 "Pickle file doesn't contain expected dictionary structure."
             )
 
+        required_keys = ["x_train", "y_train", "x_test", "y_test"]
+        for key in required_keys:
+            if key not in data:
+                raise KeyError(f"Required key '{key}' not found in pickle file.")
 
-class DataUtils:
-    @staticmethod
-    def shuffle_data(x_data, y_data):
-        indices = np.random.permutation(len(x_data))
+        x_train = data["x_train"]
+        y_train = data["y_train"]
+        x_test = data["x_test"]
+        y_test = data["y_test"]
 
-        shuffled_x = x_data[indices]
-        shuffled_y = y_data[indices]
+        for x_data_name, x_data in [("x_train", x_train), ("x_test", x_test)]:
+            if len(x_data.shape) == 4:
+                pass
+            elif len(x_data.shape) == 3:
+                height = int(np.sqrt(x_data.shape[1]))
+                if x_data_name == "x_train":
+                    x_train = x_data.reshape(x_data.shape[0], height, height, 1)
+                else:
+                    x_test = x_data.reshape(x_data.shape[0], height, height, 1)
+            else:
+                raise ValueError(f"Unsupported shape for {x_data_name}")
 
-        return shuffled_x, shuffled_y
-
-    @staticmethod
-    def normalize_image_data(x_data):
-        normalized_data = x_data / 255.0
-
-        return normalized_data
+        return x_train, y_train, x_test, y_test
 
 
 if __name__ == "__main__":
-    NON_COLORED_DATASET = {
-        "name": "zalando-research/fashionmnist",
-        "test_filename": "fashion-mnist_test.csv",
-        "train_filename": "fashion-mnist_train.csv",
-        "labels_column": "label",
-    }
+    dataset_config = DatasetConfig.traffic_signs()
+    dataset = KaggleDataset(dataset_config, auto_load=True)
+    dataset.normalize()
+    dataset.shuffle()
 
-    COLORED_DATASET = {
-        "name": "valentynsichkar/traffic-signs-preprocessed",
-        "filename": "data0.pickle",
-    }
-
-    dataset_config = NON_COLORED_DATASET
-
-    downloader = KaggleDataset(dataset_config["name"])
-    downloader.download()
-
-    x_train, y_train = downloader.get_data(
-        dataset_config["train_filename"], labels_column=dataset_config["labels_column"]
-    )
-
-    x_train, y_train = DataUtils.shuffle_data(x_train, y_train)
-    x_train = DataUtils.normalize_image_data(x_train)
-
-    print(x_train)
-    print(y_train)
+    print(f"Train shape: {dataset.x_train.shape}, {dataset.y_train.shape}")
+    print(f"Test shape: {dataset.x_test.shape}, {dataset.y_test.shape}")
