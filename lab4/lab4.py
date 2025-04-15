@@ -352,16 +352,13 @@ class Utils:
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
     @staticmethod
-    def get_dataset_config(dataset_type: str) -> Dict:
-        if dataset_type == "colored":
+    def get_dataset_config(is_dataset_colored: bool) -> Dict:
+        if is_dataset_colored:
             print(f"Dataset set to: traffic-signs-preprocessed")
             return DatasetConfig.traffic_signs()
-        elif dataset_type == "non_colored":
+        else:
             print(f"Dataset set to: fashionmnist")
             return DatasetConfig.fashion_mnist()
-        else:
-            print(f"Invalid dataset type: {dataset_type}")
-            raise ValueError(f"Invalid dataset type: {dataset_type}")
 
     @staticmethod
     def get_tf_log_verbosity(log_to_file_flag: bool) -> int:
@@ -416,9 +413,7 @@ class OutputLogger:
 if __name__ == "__main__":
     LOGGING_ENABLED = False
     TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
-
-    # DATASET_TYPE = "colored"
-    DATASET_TYPE = "non_colored"
+    IS_DATASET_COLORED = False
 
     logger = OutputLogger(LOGGING_ENABLED)
     logger.start()
@@ -426,7 +421,7 @@ if __name__ == "__main__":
     Utils.set_np_tf_seed()
     Utils.set_tf_gpu()
 
-    dataset_config = Utils.get_dataset_config(DATASET_TYPE)
+    dataset_config = Utils.get_dataset_config(IS_DATASET_COLORED)
     dataset = KaggleDataset(dataset_config)
 
     cnn_model = CNNModel(
