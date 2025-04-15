@@ -4,8 +4,9 @@ import pickle
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from typing import Tuple, Optional, List, Dict
 from tensorflow.keras import layers, models
+from tensorflow.keras.callbacks import History
+from typing import Tuple, Optional, List, Dict
 from kaggle.api.kaggle_api_extended import KaggleApi
 
 
@@ -312,18 +313,25 @@ class CNNModel:
         validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
         batch_size: int = 32,
         epochs: int = 5,
-    ) -> None:
+        verbose: int = 1,
+    ) -> History:
         history = self.model.fit(
             x_train,
             y_train,
             validation_data=validation_data,
             batch_size=batch_size,
             epochs=epochs,
+            verbose=verbose,
         )
         return history
 
-    def evaluate(self, x_test: np.ndarray, y_test: np.ndarray) -> Tuple[float, float]:
-        loss, accuracy = self.model.evaluate(x_test, y_test)
+    def evaluate(
+        self,
+        x_test: np.ndarray,
+        y_test: np.ndarray,
+        verbose: int = 1,
+    ) -> Tuple[float, float]:
+        loss, accuracy = self.model.evaluate(x_test, y_test, verbose=verbose)
         return loss, accuracy
 
 
@@ -340,7 +348,7 @@ class Utils:
     def set_tf_gpu() -> None:
         physical_devices = tf.config.list_physical_devices("GPU")
         if not physical_devices:
-            print("No GPU found. Using CPU instead.")
+            print("No GPU found, using CPU instead")
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
     @staticmethod
@@ -355,10 +363,17 @@ class Utils:
             print(f"Invalid dataset type: {dataset_type}")
             raise ValueError(f"Invalid dataset type: {dataset_type}")
 
+    @staticmethod
+    def get_tf_log_verbosity(log_to_file_flag: bool) -> int:
+        return 2 if log_to_file_flag else 1
+
 
 class OutputLogger:
     def __init__(
-        self, log_to_file_flag, output_directory="outputs", log_filename="output.txt"
+        self,
+        log_to_file_flag: bool,
+        output_directory: str = "outputs",
+        log_filename: str = "output.txt",
     ):
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -370,7 +385,7 @@ class OutputLogger:
         self._original_stdout = sys.stdout
         self._log_file = None
 
-    def start(self):
+    def start(self) -> None:
         if not self._log_to_file:
             print("Logging to file is disabled.")
             return
@@ -384,7 +399,7 @@ class OutputLogger:
         print(f"Logging output to {self._log_file_path}...")
         sys.stdout = self._log_file
 
-    def stop(self):
+    def stop(self) -> None:
         if not self._log_to_file:
             return
 
@@ -399,20 +414,19 @@ class OutputLogger:
 
 
 if __name__ == "__main__":
-    LOG_TO_FILE = True
+    LOGGING_ENABLED = False
+    TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
 
-    DATASET_TYPE = "colored"
-    # DATASET_TYPE = "non_colored"
+    # DATASET_TYPE = "colored"
+    DATASET_TYPE = "non_colored"
 
-    logger = OutputLogger(LOG_TO_FILE)
+    logger = OutputLogger(LOGGING_ENABLED)
     logger.start()
 
     Utils.set_np_tf_seed()
     Utils.set_tf_gpu()
 
     dataset_config = Utils.get_dataset_config(DATASET_TYPE)
-
-    print(dataset_config)
     dataset = KaggleDataset(dataset_config)
 
     cnn_model = CNNModel(
@@ -421,13 +435,14 @@ if __name__ == "__main__":
     )
 
     cnn_model.build()
-    cnn_model.train(
-        dataset.x_train,
-        dataset.y_train,
-    )
+    cnn_model.train(dataset.x_train, dataset.y_train, verbose=TF_LOG_VERBOSITY)
 
-    train_loss, train_acc = cnn_model.evaluate(dataset.x_train, dataset.y_train)
-    test_loss, test_acc = cnn_model.evaluate(dataset.x_test, dataset.y_test)
+    train_loss, train_acc = cnn_model.evaluate(
+        dataset.x_train, dataset.y_train, TF_LOG_VERBOSITY
+    )
+    test_loss, test_acc = cnn_model.evaluate(
+        dataset.x_test, dataset.y_test, TF_LOG_VERBOSITY
+    )
 
     print(f"Train accuracy: {train_acc:.4f}")
     print(f"Train loss: {train_loss:.4f}")
