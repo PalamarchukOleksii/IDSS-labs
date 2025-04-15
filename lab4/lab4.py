@@ -65,10 +65,8 @@ class KaggleDataset:
         self.x_test = None
         self.y_test = None
 
-        self.need_normalize = normalize
-        self.need_shuffle = shuffle
-        self.is_normalized = False
-        self.is_shuffled = False
+        self.is_normalized = not normalize
+        self.is_shuffled = not shuffle
 
         self.__api.authenticate()
 
@@ -115,30 +113,34 @@ class KaggleDataset:
         else:
             raise ValueError(f"Unsupported file type: {self.config.file_type}")
 
-        if self.need_normalize:
+        if not self.is_normalized:
             self.normalize()
 
-        if self.need_shuffle:
+        if not self.is_shuffled:
             self.shuffle()
 
         print(f"Train data loaded: {self.x_train.shape}, {self.y_train.shape}")
         print(f"Test data loaded: {self.x_test.shape}, {self.y_test.shape}")
 
     def normalize(self) -> None:
-        if self.x_train is not None:
+        if self.x_train is not None and not self.is_normalized:
             self.x_train = self.x_train / 255.0
-        if self.x_test is not None:
+        if self.x_test is not None and not self.is_normalized:
             self.x_test = self.x_test / 255.0
         self.is_normalized = True
         print("Data normalized")
 
     def shuffle(self) -> None:
-        if self.x_train is not None and self.y_train is not None:
+        if (
+            self.x_train is not None
+            and self.y_train is not None
+            and not self.is_shuffled
+        ):
             indices = np.random.permutation(len(self.x_train))
             self.x_train = self.x_train[indices]
             self.y_train = self.y_train[indices]
 
-        if self.x_test is not None and self.y_test is not None:
+        if self.x_test is not None and self.y_test is not None and not self.is_shuffled:
             indices = np.random.permutation(len(self.x_test))
             self.x_test = self.x_test[indices]
             self.y_test = self.y_test[indices]
@@ -354,11 +356,11 @@ class Utils:
     @staticmethod
     def get_dataset_config(is_dataset_colored: bool) -> Dict:
         if is_dataset_colored:
-            print(f"Dataset set to: traffic-signs-preprocessed")
+            print("Dataset set to: traffic-signs-preprocessed")
             return DatasetConfig.traffic_signs()
-        else:
-            print(f"Dataset set to: fashionmnist")
-            return DatasetConfig.fashion_mnist()
+
+        print("Dataset set to: fashionmnist")
+        return DatasetConfig.fashion_mnist()
 
     @staticmethod
     def get_tf_log_verbosity(log_to_file_flag: bool) -> int:
@@ -392,7 +394,7 @@ class OutputLogger:
             return
 
         os.makedirs(self._log_dir_path, exist_ok=True)
-        self._log_file = open(self._log_file_path, "w")
+        self._log_file = open(self._log_file_path, "w", encoding="utf-8")
         print(f"Logging output to {self._log_file_path}...")
         sys.stdout = self._log_file
 
