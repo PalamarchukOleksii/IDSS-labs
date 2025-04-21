@@ -8,6 +8,10 @@ from tensorflow.keras import layers, models
 from tensorflow.keras.callbacks import History
 from typing import Tuple, Optional, List, Dict
 from kaggle.api.kaggle_api_extended import KaggleApi
+from sklearn.model_selection import train_test_split
+from itertools import product
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from tensorflow.keras.callbacks import EarlyStopping
 
 
 class DatasetConfig:
@@ -254,6 +258,7 @@ class CNNModel:
         use_batch_norm: bool = False,
         use_dropout: bool = False,
         dropout_rate: float = 0.5,
+        kernel_initializer: str = "glorot_uniform",
     ):
         self.input_shape = input_shape
         self.num_classes = num_classes
@@ -266,6 +271,7 @@ class CNNModel:
         self.use_batch_norm = use_batch_norm
         self.use_dropout = use_dropout
         self.dropout_rate = dropout_rate
+        self.kernel_initializer = kernel_initializer
         self.model = None
 
     def build(self) -> None:
@@ -279,6 +285,7 @@ class CNNModel:
                 strides=self.strides,
                 padding=self.padding,
                 activation="relu",
+                kernel_initializer=self.kernel_initializer,
             )(x)
 
             if self.use_batch_norm:
@@ -316,6 +323,7 @@ class CNNModel:
         batch_size: int = 32,
         epochs: int = 5,
         verbose: int = 1,
+        use_early_stopping: bool = False,
     ) -> History:
         history = self.model.fit(
             x_train,
@@ -412,6 +420,175 @@ class OutputLogger:
         self.stop()
 
 
+def analyze_conv_parameters(
+    input_shape: Tuple[int, int, int],
+    num_classes: int,
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+    verbosity: int = 1,
+) -> Dict:
+    """Analysis of convolution parameters: kernel_size, strides, padding."""
+    from itertools import product
+
+    param_combinations = list(product(
+        [(3, 3), (5, 5)],           # kernel_size
+        [(1, 1), (2, 2)],           # strides
+        ["same", "valid"]           # padding
+    ))
+
+    best_config = None
+    best_accuracy = -1.0
+    results = []
+
+    print("\n=== Analysis of convolution parameters ===")
+    for kernel_size, strides, padding in param_combinations:
+        print(f"\nConfiguration: kernel={kernel_size}, strides={strides}, padding={padding}")
+
+        model = CNNModel(
+            input_shape=input_shape,
+            num_classes=num_classes,
+            kernel_size=kernel_size,
+            strides=strides,
+            padding=padding,
+        )
+        model.build()
+
+        history = model.train(
+            x_train, y_train,
+            validation_data=(x_val, y_val),
+            epochs=3,
+            batch_size=64,
+            verbose=verbosity
+        )
+
+        val_loss, val_acc = model.evaluate(x_val, y_val, verbose=verbosity)
+        print(f"Validation accuracy = {val_acc:.4f}")
+        results.append(((kernel_size, strides, padding), val_acc))
+
+        if val_acc > best_accuracy:
+            best_accuracy = val_acc
+            best_config = (kernel_size, strides, padding)
+
+    print("\nThe best configuration:")
+    print(f"Kernel: {best_config[0]}, Strides: {best_config[1]}, Padding: {best_config[2]}")
+    print(f"Validation Accuracy: {best_accuracy:.4f}")
+
+    return {
+        "best_kernel_size": best_config[0],
+        "best_strides": best_config[1],
+        "best_padding": best_config[2],
+        "best_accuracy": best_accuracy,
+        "all_results": results
+    }
+
+
+def evaluate_architectures_detailed(
+    input_shape: Tuple[int, int, int],
+    num_classes: int,
+    x_val: np.ndarray,
+    y_val: np.ndarray,
+    architectures: List[Dict],
+    verbosity: int = 1
+) -> None:
+    """Evaluate CNN architectures using multiple classification metrics on validation set."""
+    print("\n=== Detailed Evaluation of Architectures ===")
+
+    results = []
+
+    for arch in architectures:
+        print(f"\nEvaluating: {arch['name']}")
+
+        model = CNNModel(
+            input_shape=input_shape,
+            num_classes=num_classes,
+            num_conv_layers=arch["num_conv"],
+            use_batch_norm=arch["batch_norm"],
+            use_dropout=arch["dropout"],
+        )
+        model.build()
+
+        # Train model (can reuse train data from earlier)
+        model.train(
+            x_train_part, y_train_part,
+            validation_data=(x_val, y_val),
+            epochs=5,
+            batch_size=64,
+            verbose=verbosity
+        )
+
+        # Predictions
+        y_pred_probs = model.model.predict(x_val)
+        y_pred = np.argmax(y_pred_probs, axis=1)
+
+        # Metrics
+        acc = accuracy_score(y_val, y_pred)
+        prec = precision_score(y_val, y_pred, average="macro", zero_division=0)
+        rec = recall_score(y_val, y_pred, average="macro", zero_division=0)
+        f1 = f1_score(y_val, y_pred, average="macro", zero_division=0)
+
+        try:
+            auc = roc_auc_score(y_val, y_pred_probs, multi_class="ovo", average="macro")
+        except ValueError:
+            auc = float("nan")  # For binary or degenerate cases
+
+        results.append({
+            "name": arch["name"],
+            "accuracy": acc,
+            "precision": prec,
+            "recall": rec,
+            "f1_score": f1,
+            "auc": auc,
+        })
+
+        print(f"Accuracy:  {acc:.4f}")
+        print(f"Precision: {prec:.4f}")
+        print(f"Recall:    {rec:.4f}")
+        print(f"F1-Score:  {f1:.4f}")
+        print(f"AUC:       {auc:.4f}")
+
+    print("\n=== Summary Table ===")
+    for r in results:
+        print(f"{r['name']:<20} | Acc: {r['accuracy']:.4f} | Prec: {r['precision']:.4f} | Recall: {r['recall']:.4f} | F1: {r['f1_score']:.4f} | AUC: {r['auc']:.4f}")
+
+    # Identify best model for each metric
+    best_by_accuracy = max(results, key=lambda r: r["accuracy"])
+    best_by_precision = max(results, key=lambda r: r["precision"])
+    best_by_recall = max(results, key=lambda r: r["recall"])
+    best_by_f1 = max(results, key=lambda r: r["f1_score"])
+    best_by_auc = max(results, key=lambda r: r["auc"] if not np.isnan(r["auc"]) else -1)
+
+    print("\n=== Best models per metric ===")
+    print(f"Accuracy:  {best_by_accuracy['name']} ({best_by_accuracy['accuracy']:.4f})")
+    print(f"Precision: {best_by_precision['name']} ({best_by_precision['precision']:.4f})")
+    print(f"Recall:    {best_by_recall['name']} ({best_by_recall['recall']:.4f})")
+    print(f"F1-score:  {best_by_f1['name']} ({best_by_f1['f1_score']:.4f})")
+    print(f"AUC:       {best_by_auc['name']} ({best_by_auc['auc']:.4f})")
+
+    # Calculate average of all 5 metrics
+    for r in results:
+        r["mean_score"] = np.mean([
+            r["accuracy"],
+            r["precision"],
+            r["recall"],
+            r["f1_score"],
+            r["auc"] if not np.isnan(r["auc"]) else 0.0
+        ])
+
+    best_overall = max(results, key=lambda r: r["mean_score"])
+
+    print("\n=== Best overall model (by mean of all metrics) ===")
+    print(f"Name: {best_overall['name']}")
+    print(f"Mean Score: {best_overall['mean_score']:.4f}")
+    print(f"Accuracy:  {best_overall['accuracy']:.4f}")
+    print(f"Precision: {best_overall['precision']:.4f}")
+    print(f"Recall:    {best_overall['recall']:.4f}")
+    print(f"F1-Score:  {best_overall['f1_score']:.4f}")
+    print(f"AUC:       {best_overall['auc']:.4f}")
+
+
+
 if __name__ == "__main__":
     LOGGING_ENABLED = False
     TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
@@ -432,7 +609,16 @@ if __name__ == "__main__":
     )
 
     cnn_model.build()
-    cnn_model.train(dataset.x_train, dataset.y_train, verbose=TF_LOG_VERBOSITY)
+
+    x_train_part, x_val_part, y_train_part, y_val_part = train_test_split(
+        dataset.x_train, dataset.y_train, test_size=0.2, random_state=42
+    )
+
+    cnn_model.train(
+        x_train_part, y_train_part,
+        validation_data=(x_val_part, y_val_part),
+        verbose=TF_LOG_VERBOSITY
+    )
 
     train_loss, train_acc = cnn_model.evaluate(
         dataset.x_train, dataset.y_train, TF_LOG_VERBOSITY
@@ -445,5 +631,63 @@ if __name__ == "__main__":
     print(f"Train loss: {train_loss:.4f}")
     print(f"Test accuracy: {test_acc:.4f}")
     print(f"Test loss: {test_loss:.4f}")
+
+    # Analysis of convolution parameters after training the base model
+    _ = analyze_conv_parameters(
+        input_shape=dataset.get_sample_shape(),
+        num_classes=dataset.get_num_of_classes(),
+        x_train=x_train_part,
+        y_train=y_train_part,
+        x_val=x_val_part,
+        y_val=y_val_part,
+        verbosity=TF_LOG_VERBOSITY
+    )
+
+    architectures_to_evaluate = [
+        {"name": "baseline", "num_conv": 1, "batch_norm": False, "dropout": False},
+        {"name": "2conv", "num_conv": 2, "batch_norm": False, "dropout": False},
+        {"name": "2conv_bn", "num_conv": 2, "batch_norm": True, "dropout": False},
+        {"name": "2conv_bn_dropout", "num_conv": 2, "batch_norm": True, "dropout": True},
+        {"name": "3conv_bn_dropout", "num_conv": 3, "batch_norm": True, "dropout": True},
+    ]
+
+    # Evaluate architectures with detailed metrics
+    evaluate_architectures_detailed(
+        input_shape=dataset.get_sample_shape(),
+        num_classes=dataset.get_num_of_classes(),
+        x_val=x_val_part,
+        y_val=y_val_part,
+        architectures=architectures_to_evaluate,
+        verbosity=TF_LOG_VERBOSITY
+    )
+
+    print("\n=== Effect of Regularization and Initialization ===")
+
+    regularization_configs = [
+        {"name": "no_regularization", "dropout": False, "early_stop": False, "init": "glorot_uniform"},
+        {"name": "dropout_only", "dropout": True, "early_stop": False, "init": "glorot_uniform"},
+        {"name": "early_stop_only", "dropout": False, "early_stop": True, "init": "glorot_uniform"},
+        {"name": "dropout+early_stop", "dropout": True, "early_stop": True, "init": "glorot_uniform"},
+        {"name": "he_initializer", "dropout": False, "early_stop": False, "init": "he_uniform"},
+    ]
+
+    for config in regularization_configs:
+        print(f"\nConfiguration: {config['name']}")
+        model = CNNModel(
+            input_shape=dataset.get_sample_shape(),
+            num_classes=dataset.get_num_of_classes(),
+            use_dropout=config["dropout"],
+            kernel_initializer=config["init"]
+        )
+        model.build()
+        model.train(
+            x_train_part, y_train_part,
+            validation_data=(x_val_part, y_val_part),
+            epochs=15,
+            verbose=TF_LOG_VERBOSITY,
+            use_early_stopping=config["early_stop"]
+        )
+        val_loss, val_acc = model.evaluate(x_val_part, y_val_part, verbose=TF_LOG_VERBOSITY)
+        print(f"Validation Accuracy: {val_acc:.4f}")
 
     logger.stop()
