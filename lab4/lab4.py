@@ -12,6 +12,9 @@ from sklearn.model_selection import train_test_split
 from itertools import product
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
 from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import TensorBoard
+import datetime
+
 
 
 class DatasetConfig:
@@ -316,14 +319,15 @@ class CNNModel:
         self.model.summary()
 
     def train(
-        self,
-        x_train: np.ndarray,
-        y_train: np.ndarray,
-        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-        batch_size: int = 32,
-        epochs: int = 5,
-        verbose: int = 1,
-        use_early_stopping: bool = False,
+            self,
+            x_train: np.ndarray,
+            y_train: np.ndarray,
+            validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+            batch_size: int = 32,
+            epochs: int = 5,
+            verbose: int = 1,
+            use_early_stopping: bool = False,
+            callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
     ) -> History:
         history = self.model.fit(
             x_train,
@@ -332,6 +336,7 @@ class CNNModel:
             batch_size=batch_size,
             epochs=epochs,
             verbose=verbose,
+            callbacks=callbacks,
         )
         return history
 
@@ -373,6 +378,17 @@ class Utils:
     @staticmethod
     def get_tf_log_verbosity(log_to_file_flag: bool) -> int:
         return 2 if log_to_file_flag else 1
+
+    @staticmethod
+    def get_tensorboard_callback(log_dir_prefix="logs/fit") -> TensorBoard:
+        base_log_dir = os.path.normpath(log_dir_prefix)
+        os.makedirs(base_log_dir, exist_ok=True)  # ← гарантуємо наявність базової папки
+
+        log_dir = os.path.join(base_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+        os.makedirs(log_dir, exist_ok=True)  # ← гарантуємо створення конкретного підкаталогу
+
+        print(f"TensorBoard logs will be saved to: {log_dir}")
+        return TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 
 class OutputLogger:
@@ -614,10 +630,13 @@ if __name__ == "__main__":
         dataset.x_train, dataset.y_train, test_size=0.2, random_state=42
     )
 
+    tensorboard_cb = Utils.get_tensorboard_callback()
+
     cnn_model.train(
         x_train_part, y_train_part,
         validation_data=(x_val_part, y_val_part),
-        verbose=TF_LOG_VERBOSITY
+        verbose=TF_LOG_VERBOSITY,
+        callbacks=[tensorboard_cb]
     )
 
     train_loss, train_acc = cnn_model.evaluate(
