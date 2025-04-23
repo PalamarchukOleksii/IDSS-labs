@@ -68,6 +68,25 @@ Once you're done, deactivate the virtual environment:
 deactivate
 ```
 
+### Attention: Lab 4 Requires Kaggle API Key
+
+**Lab 4 depends on datasets from Kaggle. You must set up your Kaggle API key before running any scripts in this lab.**
+
+To do this:
+
+1. Go to your Kaggle account settings: https://www.kaggle.com/account
+2. Scroll down to the API section and click **"Create New API Token"**.
+3. A `kaggle.json` file will be downloaded.
+4. Place this file in the appropriate location:
+   - **Linux/macOS**: `~/.kaggle/kaggle.json`
+   - **Windows**: `C:\Users\<YourUsername>\.kaggle\kaggle.json`
+5. On **Linux**, set the correct file permissions:
+   ```bash
+   chmod 600 ~/.kaggle/kaggle.json
+   ```
+
+Without this setup, Lab 4 will not be able to access the necessary datasets.
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
