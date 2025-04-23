@@ -14,9 +14,12 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
 import datetime
-
-
-
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.neural_network import MLPClassifier
+from tensorflow.keras.utils import to_categorical
+import random
+from sklearn.metrics import ConfusionMatrixDisplay
 class DatasetConfig:
     def __init__(
         self,
@@ -603,12 +606,129 @@ def evaluate_architectures_detailed(
     print(f"F1-Score:  {best_overall['f1_score']:.4f}")
     print(f"AUC:       {best_overall['auc']:.4f}")
 
+from sklearn.metrics import ConfusionMatrixDisplay
 
+def evaluate_model(model, x_test, y_test, class_names=None):
+    """
+    Завдання 9: Розрахунок оцінок якості моделі на тестовій множині
+    """
+    print("\n=== Оцінка якості моделі на тестовій множині ===")
+    
+    # Оцінка точності та втрат
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
+    print(f"Test accuracy: {test_acc:.4f}")
+    print(f"Test loss: {test_loss:.4f}")
+    
+    # Передбачення класів
+    y_pred = np.argmax(model.model.predict(x_test), axis=1)
+    
+    # Розрахунок метрик
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, target_names=class_names, zero_division=0))
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    print("\nConfusion Matrix:")
+    print(cm)
+    
+    # Візуалізація confusion matrix
+    if class_names:
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+        disp.plot(cmap=plt.cm.Blues)
+        plt.title("Confusion Matrix")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+def load_and_predict_random_images(model, x_test, y_test, class_names=None, num_images=5):
+    print("\n=== Розпізнавання тестових зображень ===")
+    
+    # Вибір випадкових зображень
+    indices = random.sample(range(len(x_test)), num_images)
+    sample_images = x_test[indices]
+    sample_labels = y_test[indices]
+    
+    # Передбачення класів
+    predictions = model.model.predict(sample_images)
+    predicted_classes = np.argmax(predictions, axis=1)
+    
+    # Візуалізація результатів
+    plt.figure(figsize=(15, 5))
+    for i in range(num_images):
+        plt.subplot(1, num_images, i+1)
+        if sample_images[i].shape[-1] == 1:  # Чорно-білі зображення
+            plt.imshow(sample_images[i].squeeze(), cmap='gray')
+        else:  # Кольорові зображення
+            plt.imshow(sample_images[i])
+        
+        true_label = class_names[sample_labels[i]] if class_names else sample_labels[i]
+        pred_label = class_names[predicted_classes[i]] if class_names else predicted_classes[i]
+        
+        title_color = 'green' if true_label == pred_label else 'red'
+        plt.title(f"True: {true_label}\nPred: {pred_label}", color=title_color)
+        plt.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+class MLPModel:
+    """
+    Клас для багатошарового персептрона (MLP)
+    """
+    def __init__(self, input_shape, num_classes, hidden_layer_sizes=(128,), max_iter=100):
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.max_iter = max_iter
+        self.model = None
+    
+    def build(self):
+        input_size = np.prod(self.input_shape)
+        self.model = MLPClassifier(
+            hidden_layer_sizes=self.hidden_layer_sizes,
+            max_iter=self.max_iter,
+            random_state=42
+        )
+    
+    def train(self, x_train, y_train):
+        # Змінюємо форму даних для MLP (з 4D в 2D)
+        x_train_flat = x_train.reshape(x_train.shape[0], -1)
+        self.model.fit(x_train_flat, y_train)
+    
+    def evaluate(self, x_test, y_test):
+        x_test_flat = x_test.reshape(x_test.shape[0], -1)
+        return self.model.score(x_test_flat, y_test)
+
+def compare_models(cnn_model, mlp_model, x_test, y_test, x_train, y_train):
+    print("\n=== Порівняння CNN та MLP ===")
+    
+    # Оцінка часу навчання (спрощено)
+    import time
+    
+    # CNN
+    start_time = time.time()
+    cnn_model.train(x_train, y_train, epochs=5, verbose=0)
+    cnn_time = time.time() - start_time
+    
+    # MLP
+    start_time = time.time()
+    mlp_model.train(x_train, y_train)
+    mlp_time = time.time() - start_time
+    
+    # Оцінка точності
+    cnn_acc = cnn_model.evaluate(x_test, y_test, verbose=0)[1]
+    mlp_acc = mlp_model.evaluate(x_test, y_test)
+    
+    print("\nРезультати порівняння:")
+    print(f"{'Метрика':<15} | {'CNN':<10} | {'MLP':<10}")
+    print("-" * 40)
+    print(f"{'Точність':<15} | {cnn_acc:.4f}    | {mlp_acc:.4f}")
+    print(f"{'Час навчання':<15} | {cnn_time:.2f} сек | {mlp_time:.2f} сек")
+    print(f"{'Параметри':<15} | {cnn_model.model.count_params():<10} | {mlp_model.model.n_layers_ * mlp_model.model.hidden_layer_sizes[0]:<10} (приблизно)")
 
 if __name__ == "__main__":
     LOGGING_ENABLED = False
     TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
-    IS_DATASET_COLORED = False
+    IS_DATASET_COLORED = True
 
     logger = OutputLogger(LOGGING_ENABLED)
     logger.start()
@@ -708,5 +828,32 @@ if __name__ == "__main__":
         )
         val_loss, val_acc = model.evaluate(x_val_part, y_val_part, verbose=TF_LOG_VERBOSITY)
         print(f"Validation Accuracy: {val_acc:.4f}")
-
+  
+    class_names = None
+    if not IS_DATASET_COLORED:
+        class_names = [
+            'T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
+            'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
+        ]
+    
+    evaluate_model(cnn_model, dataset.x_test, dataset.y_test, class_names)
+    
+    load_and_predict_random_images(cnn_model, dataset.x_test, dataset.y_test, class_names)
+    
+    mlp_model = MLPModel(
+        input_shape=dataset.get_sample_shape(),
+        num_classes=dataset.get_num_of_classes(),
+        hidden_layer_sizes=(128, 64)
+    )
+    mlp_model.build()
+    
+    compare_models(
+        cnn_model=cnn_model,
+        mlp_model=mlp_model,
+        x_test=dataset.x_test,
+        y_test=dataset.y_test,
+        x_train=x_train_part,
+        y_train=y_train_part
+    )
+    
     logger.stop()
