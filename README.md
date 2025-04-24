@@ -68,7 +68,11 @@ Once you're done, deactivate the virtual environment:
 deactivate
 ```
 
-### Attention: Lab 4 Requires Kaggle API Key
+---
+
+## Special Instructions for Lab 4
+
+### Kaggle API Key Required
 
 **Lab 4 depends on datasets from Kaggle. You must set up your Kaggle API key before running any scripts in this lab.**
 
@@ -86,6 +90,22 @@ To do this:
    ```
 
 Without this setup, Lab 4 will not be able to access the necessary datasets.
+
+### Viewing TensorBoard for Lab 4
+
+If you want to monitor training progress with TensorBoard in Lab 4:
+
+1. Run `lab4.py` as usual:
+   ```bash
+   python lab4.py
+   ```
+2. Then, start TensorBoard from the `lab4` directory:
+   ```bash
+   tensorboard --logdir=logs
+   ```
+3. Open your browser and go to `http://localhost:6006` to view the dashboard.
+
+---
 
 ## License
 

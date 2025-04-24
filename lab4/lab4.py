@@ -10,7 +10,13 @@ from typing import Tuple, Optional, List, Dict
 from kaggle.api.kaggle_api_extended import KaggleApi
 from sklearn.model_selection import train_test_split
 from itertools import product
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+)
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.callbacks import TensorBoard
 import datetime
@@ -20,6 +26,8 @@ from sklearn.neural_network import MLPClassifier
 from tensorflow.keras.utils import to_categorical
 import random
 from sklearn.metrics import ConfusionMatrixDisplay
+
+
 class DatasetConfig:
     def __init__(
         self,
@@ -322,15 +330,15 @@ class CNNModel:
         self.model.summary()
 
     def train(
-            self,
-            x_train: np.ndarray,
-            y_train: np.ndarray,
-            validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
-            batch_size: int = 32,
-            epochs: int = 5,
-            verbose: int = 1,
-            use_early_stopping: bool = False,
-            callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
+        self,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        batch_size: int = 32,
+        epochs: int = 5,
+        verbose: int = 1,
+        use_early_stopping: bool = False,
+        callbacks: Optional[List[tf.keras.callbacks.Callback]] = None,
     ) -> History:
         history = self.model.fit(
             x_train,
@@ -387,8 +395,12 @@ class Utils:
         base_log_dir = os.path.normpath(log_dir_prefix)
         os.makedirs(base_log_dir, exist_ok=True)  # ← гарантуємо наявність базової папки
 
-        log_dir = os.path.join(base_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-        os.makedirs(log_dir, exist_ok=True)  # ← гарантуємо створення конкретного підкаталогу
+        log_dir = os.path.join(
+            base_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        )
+        os.makedirs(
+            log_dir, exist_ok=True
+        )  # ← гарантуємо створення конкретного підкаталогу
 
         print(f"TensorBoard logs will be saved to: {log_dir}")
         return TensorBoard(log_dir=log_dir, histogram_freq=1)
@@ -451,11 +463,13 @@ def analyze_conv_parameters(
     """Analysis of convolution parameters: kernel_size, strides, padding."""
     from itertools import product
 
-    param_combinations = list(product(
-        [(3, 3), (5, 5)],           # kernel_size
-        [(1, 1), (2, 2)],           # strides
-        ["same", "valid"]           # padding
-    ))
+    param_combinations = list(
+        product(
+            [(3, 3), (5, 5)],  # kernel_size
+            [(1, 1), (2, 2)],  # strides
+            ["same", "valid"],  # padding
+        )
+    )
 
     best_config = None
     best_accuracy = -1.0
@@ -463,7 +477,9 @@ def analyze_conv_parameters(
 
     print("\n=== Analysis of convolution parameters ===")
     for kernel_size, strides, padding in param_combinations:
-        print(f"\nConfiguration: kernel={kernel_size}, strides={strides}, padding={padding}")
+        print(
+            f"\nConfiguration: kernel={kernel_size}, strides={strides}, padding={padding}"
+        )
 
         model = CNNModel(
             input_shape=input_shape,
@@ -475,11 +491,12 @@ def analyze_conv_parameters(
         model.build()
 
         history = model.train(
-            x_train, y_train,
+            x_train,
+            y_train,
             validation_data=(x_val, y_val),
             epochs=3,
             batch_size=64,
-            verbose=verbosity
+            verbose=verbosity,
         )
 
         val_loss, val_acc = model.evaluate(x_val, y_val, verbose=verbosity)
@@ -491,7 +508,9 @@ def analyze_conv_parameters(
             best_config = (kernel_size, strides, padding)
 
     print("\nThe best configuration:")
-    print(f"Kernel: {best_config[0]}, Strides: {best_config[1]}, Padding: {best_config[2]}")
+    print(
+        f"Kernel: {best_config[0]}, Strides: {best_config[1]}, Padding: {best_config[2]}"
+    )
     print(f"Validation Accuracy: {best_accuracy:.4f}")
 
     return {
@@ -499,7 +518,7 @@ def analyze_conv_parameters(
         "best_strides": best_config[1],
         "best_padding": best_config[2],
         "best_accuracy": best_accuracy,
-        "all_results": results
+        "all_results": results,
     }
 
 
@@ -509,7 +528,7 @@ def evaluate_architectures_detailed(
     x_val: np.ndarray,
     y_val: np.ndarray,
     architectures: List[Dict],
-    verbosity: int = 1
+    verbosity: int = 1,
 ) -> None:
     """Evaluate CNN architectures using multiple classification metrics on validation set."""
     print("\n=== Detailed Evaluation of Architectures ===")
@@ -530,11 +549,12 @@ def evaluate_architectures_detailed(
 
         # Train model (can reuse train data from earlier)
         model.train(
-            x_train_part, y_train_part,
+            x_train_part,
+            y_train_part,
             validation_data=(x_val, y_val),
             epochs=5,
             batch_size=64,
-            verbose=verbosity
+            verbose=verbosity,
         )
 
         # Predictions
@@ -552,14 +572,16 @@ def evaluate_architectures_detailed(
         except ValueError:
             auc = float("nan")  # For binary or degenerate cases
 
-        results.append({
-            "name": arch["name"],
-            "accuracy": acc,
-            "precision": prec,
-            "recall": rec,
-            "f1_score": f1,
-            "auc": auc,
-        })
+        results.append(
+            {
+                "name": arch["name"],
+                "accuracy": acc,
+                "precision": prec,
+                "recall": rec,
+                "f1_score": f1,
+                "auc": auc,
+            }
+        )
 
         print(f"Accuracy:  {acc:.4f}")
         print(f"Precision: {prec:.4f}")
@@ -569,7 +591,9 @@ def evaluate_architectures_detailed(
 
     print("\n=== Summary Table ===")
     for r in results:
-        print(f"{r['name']:<20} | Acc: {r['accuracy']:.4f} | Prec: {r['precision']:.4f} | Recall: {r['recall']:.4f} | F1: {r['f1_score']:.4f} | AUC: {r['auc']:.4f}")
+        print(
+            f"{r['name']:<20} | Acc: {r['accuracy']:.4f} | Prec: {r['precision']:.4f} | Recall: {r['recall']:.4f} | F1: {r['f1_score']:.4f} | AUC: {r['auc']:.4f}"
+        )
 
     # Identify best model for each metric
     best_by_accuracy = max(results, key=lambda r: r["accuracy"])
@@ -580,20 +604,24 @@ def evaluate_architectures_detailed(
 
     print("\n=== Best models per metric ===")
     print(f"Accuracy:  {best_by_accuracy['name']} ({best_by_accuracy['accuracy']:.4f})")
-    print(f"Precision: {best_by_precision['name']} ({best_by_precision['precision']:.4f})")
+    print(
+        f"Precision: {best_by_precision['name']} ({best_by_precision['precision']:.4f})"
+    )
     print(f"Recall:    {best_by_recall['name']} ({best_by_recall['recall']:.4f})")
     print(f"F1-score:  {best_by_f1['name']} ({best_by_f1['f1_score']:.4f})")
     print(f"AUC:       {best_by_auc['name']} ({best_by_auc['auc']:.4f})")
 
     # Calculate average of all 5 metrics
     for r in results:
-        r["mean_score"] = np.mean([
-            r["accuracy"],
-            r["precision"],
-            r["recall"],
-            r["f1_score"],
-            r["auc"] if not np.isnan(r["auc"]) else 0.0
-        ])
+        r["mean_score"] = np.mean(
+            [
+                r["accuracy"],
+                r["precision"],
+                r["recall"],
+                r["f1_score"],
+                r["auc"] if not np.isnan(r["auc"]) else 0.0,
+            ]
+        )
 
     best_overall = max(results, key=lambda r: r["mean_score"])
 
@@ -606,31 +634,35 @@ def evaluate_architectures_detailed(
     print(f"F1-Score:  {best_overall['f1_score']:.4f}")
     print(f"AUC:       {best_overall['auc']:.4f}")
 
+
 from sklearn.metrics import ConfusionMatrixDisplay
+
 
 def evaluate_model(model, x_test, y_test, class_names=None):
     """
     Завдання 9: Розрахунок оцінок якості моделі на тестовій множині
     """
     print("\n=== Оцінка якості моделі на тестовій множині ===")
-    
+
     # Оцінка точності та втрат
     test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)
     print(f"Test accuracy: {test_acc:.4f}")
     print(f"Test loss: {test_loss:.4f}")
-    
+
     # Передбачення класів
     y_pred = np.argmax(model.model.predict(x_test), axis=1)
-    
+
     # Розрахунок метрик
     print("\nClassification Report:")
-    print(classification_report(y_test, y_pred, target_names=class_names, zero_division=0))
-    
+    print(
+        classification_report(y_test, y_pred, target_names=class_names, zero_division=0)
+    )
+
     # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
     print("\nConfusion Matrix:")
     print(cm)
-    
+
     # Візуалізація confusion matrix
     if class_names:
         disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
@@ -640,95 +672,108 @@ def evaluate_model(model, x_test, y_test, class_names=None):
         plt.tight_layout()
         plt.show()
 
-def load_and_predict_random_images(model, x_test, y_test, class_names=None, num_images=5):
+
+def load_and_predict_random_images(
+    model, x_test, y_test, class_names=None, num_images=5
+):
     print("\n=== Розпізнавання тестових зображень ===")
-    
+
     # Вибір випадкових зображень
     indices = random.sample(range(len(x_test)), num_images)
     sample_images = x_test[indices]
     sample_labels = y_test[indices]
-    
+
     # Передбачення класів
     predictions = model.model.predict(sample_images)
     predicted_classes = np.argmax(predictions, axis=1)
-    
+
     # Візуалізація результатів
     plt.figure(figsize=(15, 5))
     for i in range(num_images):
-        plt.subplot(1, num_images, i+1)
+        plt.subplot(1, num_images, i + 1)
         if sample_images[i].shape[-1] == 1:  # Чорно-білі зображення
-            plt.imshow(sample_images[i].squeeze(), cmap='gray')
+            plt.imshow(sample_images[i].squeeze(), cmap="gray")
         else:  # Кольорові зображення
             plt.imshow(sample_images[i])
-        
+
         true_label = class_names[sample_labels[i]] if class_names else sample_labels[i]
-        pred_label = class_names[predicted_classes[i]] if class_names else predicted_classes[i]
-        
-        title_color = 'green' if true_label == pred_label else 'red'
+        pred_label = (
+            class_names[predicted_classes[i]] if class_names else predicted_classes[i]
+        )
+
+        title_color = "green" if true_label == pred_label else "red"
         plt.title(f"True: {true_label}\nPred: {pred_label}", color=title_color)
-        plt.axis('off')
+        plt.axis("off")
     plt.tight_layout()
     plt.show()
+
 
 class MLPModel:
     """
     Клас для багатошарового персептрона (MLP)
     """
-    def __init__(self, input_shape, num_classes, hidden_layer_sizes=(128,), max_iter=100):
+
+    def __init__(
+        self, input_shape, num_classes, hidden_layer_sizes=(128,), max_iter=100
+    ):
         self.input_shape = input_shape
         self.num_classes = num_classes
         self.hidden_layer_sizes = hidden_layer_sizes
         self.max_iter = max_iter
         self.model = None
-    
+
     def build(self):
         input_size = np.prod(self.input_shape)
         self.model = MLPClassifier(
             hidden_layer_sizes=self.hidden_layer_sizes,
             max_iter=self.max_iter,
-            random_state=42
+            random_state=42,
         )
-    
+
     def train(self, x_train, y_train):
         # Змінюємо форму даних для MLP (з 4D в 2D)
         x_train_flat = x_train.reshape(x_train.shape[0], -1)
         self.model.fit(x_train_flat, y_train)
-    
+
     def evaluate(self, x_test, y_test):
         x_test_flat = x_test.reshape(x_test.shape[0], -1)
         return self.model.score(x_test_flat, y_test)
 
+
 def compare_models(cnn_model, mlp_model, x_test, y_test, x_train, y_train):
     print("\n=== Порівняння CNN та MLP ===")
-    
+
     # Оцінка часу навчання (спрощено)
     import time
-    
+
     # CNN
     start_time = time.time()
     cnn_model.train(x_train, y_train, epochs=5, verbose=0)
     cnn_time = time.time() - start_time
-    
+
     # MLP
     start_time = time.time()
     mlp_model.train(x_train, y_train)
     mlp_time = time.time() - start_time
-    
+
     # Оцінка точності
     cnn_acc = cnn_model.evaluate(x_test, y_test, verbose=0)[1]
     mlp_acc = mlp_model.evaluate(x_test, y_test)
-    
+
     print("\nРезультати порівняння:")
     print(f"{'Метрика':<15} | {'CNN':<10} | {'MLP':<10}")
     print("-" * 40)
     print(f"{'Точність':<15} | {cnn_acc:.4f}    | {mlp_acc:.4f}")
     print(f"{'Час навчання':<15} | {cnn_time:.2f} сек | {mlp_time:.2f} сек")
-    print(f"{'Параметри':<15} | {cnn_model.model.count_params():<10} | {mlp_model.model.n_layers_ * mlp_model.model.hidden_layer_sizes[0]:<10} (приблизно)")
+    print(
+        f"{'Параметри':<15} | {cnn_model.model.count_params():<10} | {mlp_model.model.n_layers_ * mlp_model.model.hidden_layer_sizes[0]:<10} (приблизно)"
+    )
+
 
 if __name__ == "__main__":
     LOGGING_ENABLED = False
     TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
-    IS_DATASET_COLORED = True
+    IS_DATASET_COLORED = False
 
     logger = OutputLogger(LOGGING_ENABLED)
     logger.start()
@@ -753,10 +798,11 @@ if __name__ == "__main__":
     tensorboard_cb = Utils.get_tensorboard_callback()
 
     cnn_model.train(
-        x_train_part, y_train_part,
+        x_train_part,
+        y_train_part,
         validation_data=(x_val_part, y_val_part),
         verbose=TF_LOG_VERBOSITY,
-        callbacks=[tensorboard_cb]
+        callbacks=[tensorboard_cb],
     )
 
     train_loss, train_acc = cnn_model.evaluate(
@@ -779,15 +825,25 @@ if __name__ == "__main__":
         y_train=y_train_part,
         x_val=x_val_part,
         y_val=y_val_part,
-        verbosity=TF_LOG_VERBOSITY
+        verbosity=TF_LOG_VERBOSITY,
     )
 
     architectures_to_evaluate = [
         {"name": "baseline", "num_conv": 1, "batch_norm": False, "dropout": False},
         {"name": "2conv", "num_conv": 2, "batch_norm": False, "dropout": False},
         {"name": "2conv_bn", "num_conv": 2, "batch_norm": True, "dropout": False},
-        {"name": "2conv_bn_dropout", "num_conv": 2, "batch_norm": True, "dropout": True},
-        {"name": "3conv_bn_dropout", "num_conv": 3, "batch_norm": True, "dropout": True},
+        {
+            "name": "2conv_bn_dropout",
+            "num_conv": 2,
+            "batch_norm": True,
+            "dropout": True,
+        },
+        {
+            "name": "3conv_bn_dropout",
+            "num_conv": 3,
+            "batch_norm": True,
+            "dropout": True,
+        },
     ]
 
     # Evaluate architectures with detailed metrics
@@ -797,17 +853,42 @@ if __name__ == "__main__":
         x_val=x_val_part,
         y_val=y_val_part,
         architectures=architectures_to_evaluate,
-        verbosity=TF_LOG_VERBOSITY
+        verbosity=TF_LOG_VERBOSITY,
     )
 
     print("\n=== Effect of Regularization and Initialization ===")
 
     regularization_configs = [
-        {"name": "no_regularization", "dropout": False, "early_stop": False, "init": "glorot_uniform"},
-        {"name": "dropout_only", "dropout": True, "early_stop": False, "init": "glorot_uniform"},
-        {"name": "early_stop_only", "dropout": False, "early_stop": True, "init": "glorot_uniform"},
-        {"name": "dropout+early_stop", "dropout": True, "early_stop": True, "init": "glorot_uniform"},
-        {"name": "he_initializer", "dropout": False, "early_stop": False, "init": "he_uniform"},
+        {
+            "name": "no_regularization",
+            "dropout": False,
+            "early_stop": False,
+            "init": "glorot_uniform",
+        },
+        {
+            "name": "dropout_only",
+            "dropout": True,
+            "early_stop": False,
+            "init": "glorot_uniform",
+        },
+        {
+            "name": "early_stop_only",
+            "dropout": False,
+            "early_stop": True,
+            "init": "glorot_uniform",
+        },
+        {
+            "name": "dropout+early_stop",
+            "dropout": True,
+            "early_stop": True,
+            "init": "glorot_uniform",
+        },
+        {
+            "name": "he_initializer",
+            "dropout": False,
+            "early_stop": False,
+            "init": "he_uniform",
+        },
     ]
 
     for config in regularization_configs:
@@ -816,44 +897,57 @@ if __name__ == "__main__":
             input_shape=dataset.get_sample_shape(),
             num_classes=dataset.get_num_of_classes(),
             use_dropout=config["dropout"],
-            kernel_initializer=config["init"]
+            kernel_initializer=config["init"],
         )
         model.build()
         model.train(
-            x_train_part, y_train_part,
+            x_train_part,
+            y_train_part,
             validation_data=(x_val_part, y_val_part),
             epochs=15,
             verbose=TF_LOG_VERBOSITY,
-            use_early_stopping=config["early_stop"]
+            use_early_stopping=config["early_stop"],
         )
-        val_loss, val_acc = model.evaluate(x_val_part, y_val_part, verbose=TF_LOG_VERBOSITY)
+        val_loss, val_acc = model.evaluate(
+            x_val_part, y_val_part, verbose=TF_LOG_VERBOSITY
+        )
         print(f"Validation Accuracy: {val_acc:.4f}")
-  
+
     class_names = None
     if not IS_DATASET_COLORED:
         class_names = [
-            'T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
-            'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
+            "T-shirt/top",
+            "Trouser",
+            "Pullover",
+            "Dress",
+            "Coat",
+            "Sandal",
+            "Shirt",
+            "Sneaker",
+            "Bag",
+            "Ankle boot",
         ]
-    
+
     evaluate_model(cnn_model, dataset.x_test, dataset.y_test, class_names)
-    
-    load_and_predict_random_images(cnn_model, dataset.x_test, dataset.y_test, class_names)
-    
+
+    load_and_predict_random_images(
+        cnn_model, dataset.x_test, dataset.y_test, class_names
+    )
+
     mlp_model = MLPModel(
         input_shape=dataset.get_sample_shape(),
         num_classes=dataset.get_num_of_classes(),
-        hidden_layer_sizes=(128, 64)
+        hidden_layer_sizes=(128, 64),
     )
     mlp_model.build()
-    
+
     compare_models(
         cnn_model=cnn_model,
         mlp_model=mlp_model,
         x_test=dataset.x_test,
         y_test=dataset.y_test,
         x_train=x_train_part,
-        y_train=y_train_part
+        y_train=y_train_part,
     )
-    
+
     logger.stop()
