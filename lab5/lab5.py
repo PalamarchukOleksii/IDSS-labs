@@ -83,7 +83,7 @@ class KaggleDataset:
             path=self.__download_path,
             unzip=unzip,
         )
-        print("Download complete.")
+        print("Download complete")
 
     def list_files(self) -> List[str]:
         files = []
@@ -117,6 +117,7 @@ class KaggleDataset:
         print(f"Test data loaded: {self.x_test.shape}, {self.y_test.shape}")
 
     def __normalize(self) -> None:
+        print("Starting normalization...")
         if self.x_train is None or self.x_test is None or self.x_val is None:
             raise RuntimeError("Data not loaded. Cannot normalize.")
 
@@ -127,6 +128,7 @@ class KaggleDataset:
         print("Data normalized")
 
     def __shuffle(self) -> None:
+        print("Starting data shuffle...")
         if self.x_train is None or self.y_train is None:
             raise RuntimeError("Training data not loaded. Cannot shuffle.")
 
@@ -141,6 +143,7 @@ class KaggleDataset:
         print("Train and validation data shuffled")
 
     def __augment(self) -> None:
+        print("Starting data augmentation...")
         if self.x_train is None or self.y_train is None:
             raise RuntimeError("Training data not loaded. Cannot augment.")
 
@@ -153,23 +156,28 @@ class KaggleDataset:
             horizontal_flip=False,
         )
 
-        augmented_generator = datagen.flow(
-            self.x_train,
-            tf.keras.utils.to_categorical(self.y_train, self.get_num_of_classes()),
-            batch_size=32,
+        augment_size = len(self.x_train)
+        batch_size = 32
+        y_train_cat = tf.keras.utils.to_categorical(
+            self.y_train, self.get_num_of_classes()
         )
 
-        augment_size = len(self.x_train)
-        augmented_images = []
-        augmented_labels = []
+        generator = datagen.flow(
+            self.x_train, y_train_cat, batch_size=batch_size, shuffle=True
+        )
 
-        for _ in range(augment_size):
-            x_aug, y_aug = next(augmented_generator)
-            augmented_images.append(x_aug[0])
-            augmented_labels.append(np.argmax(y_aug[0]))
+        augmented_images = np.empty(
+            (augment_size, *self.x_train.shape[1:]), dtype=self.x_train.dtype
+        )
+        augmented_labels = np.empty((augment_size,), dtype=self.y_train.dtype)
 
-        augmented_images = np.array(augmented_images)
-        augmented_labels = np.array(augmented_labels)
+        generated = 0
+        while generated < augment_size:
+            x_batch, y_batch = next(generator)
+            n = min(batch_size, augment_size - generated)
+            augmented_images[generated : generated + n] = x_batch[:n]
+            augmented_labels[generated : generated + n] = np.argmax(y_batch[:n], axis=1)
+            generated += n
 
         self.x_train = np.concatenate([self.x_train, augmented_images], axis=0)
         self.y_train = np.concatenate([self.y_train, augmented_labels], axis=0)
