@@ -2,12 +2,28 @@ import os
 import sys
 import pickle
 import datetime
+from typing import Tuple, Optional, List, Type
 import numpy as np
 import tensorflow as tf
-from typing import Tuple, Optional, List
 from kaggle.api.kaggle_api_extended import KaggleApi
-from tensorflow.keras.callbacks import TensorBoard
+from keras.callbacks import (
+    TensorBoard,
+    Callback,
+    ModelCheckpoint,
+    EarlyStopping,
+)
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.models import Model, save_model
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout
+from tensorflow.keras.optimizers import Adam, SGD, RMSprop, Nadam
+from tensorflow.keras.applications import (
+    VGG19,
+    InceptionV3,
+    ResNet152V2,
+    DenseNet201,
+    EfficientNetB7,
+    Xception,
+)
 
 
 class DatasetConfig:
@@ -39,13 +55,13 @@ class DatasetConfig:
 class KaggleDataset:
     def __init__(
         self,
-        config: DatasetConfig,
+        data_config: DatasetConfig,
         download_dir: str = "dataset",
     ):
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
-        self.config = config
-        self.__download_path = os.path.join(script_dir, download_dir, config.name)
+        self.config = data_config
+        self.__download_path = os.path.join(script_dir, download_dir, self.config.name)
         self.__api = KaggleApi()
 
         self.x_train = None
@@ -60,9 +76,10 @@ class KaggleDataset:
         self.__download()
         self.__load_all_data()
 
-        self.__augment()
-        self.__normalize()
         self.__shuffle()
+        self.__augment()
+        self.__shuffle()
+        self.__normalize()
 
     def __download(self, unzip: bool = True) -> None:
         if (
@@ -327,18 +344,31 @@ class Utils:
         if not physical_devices:
             print("No GPU found, using CPU instead")
             os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+        else:
+            print(f"Found {len(physical_devices)} GPU(s)")
+            for device in physical_devices:
+                try:
+                    tf.config.set_memory_growth(device, True)
+                    print(f"Memory growth enabled for GPU: {device}")
+                except RuntimeError as e:
+                    print(f"Could not set memory growth for GPU: {device} - {e}")
 
     @staticmethod
     def get_tf_log_verbosity(log_to_file_flag: bool) -> int:
         return 2 if log_to_file_flag else 1
 
     @staticmethod
-    def get_tensorboard_callback(log_dir_prefix="logs/fit") -> TensorBoard:
-        base_log_dir = os.path.normpath(log_dir_prefix)
+    def get_tensorboard_callback(
+        model_name: str, log_dir_prefix="logs/fit"
+    ) -> TensorBoard:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_log_dir = os.path.normpath(os.path.join(base_dir, log_dir_prefix))
+
         os.makedirs(base_log_dir, exist_ok=True)
 
         log_dir = os.path.join(
-            base_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            base_log_dir,
+            f"{model_name}_{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
         os.makedirs(log_dir, exist_ok=True)
 
@@ -346,8 +376,241 @@ class Utils:
         return TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 
+class TransferLearningModel:
+    MODEL_MAP = {
+        "VGG19": VGG19,
+        "InceptionV3": InceptionV3,
+        "ResNet152V2": ResNet152V2,
+        "DenseNet201": DenseNet201,
+        "EfficientNetB7": EfficientNetB7,
+        "Xception": Xception,
+    }
+
+    def __init__(
+        self,
+        base_model_name: str,
+        input_shape: tuple[int, int, int],
+        num_classes: int,
+        fully_connected_layers: Optional[list[tuple[int, str]]] = None,
+        use_dropout: bool = False,
+        dropout_rate: float = 0.5,
+        optimizer: str = "adam",
+        learning_rate: float = 0.001,
+        freeze_base_model: bool = True,
+    ):
+        if fully_connected_layers is None:
+            fully_connected_layers = [(128, "relu")]
+
+        if base_model_name not in self.MODEL_MAP:
+            raise ValueError(
+                f"Model {base_model_name} not supported. Choose from: {list(self.MODEL_MAP.keys())}"
+            )
+
+        self.base_model_name = base_model_name
+        self.base_model_class: Type[Model] = self.MODEL_MAP[base_model_name]
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.fully_connected_layers = fully_connected_layers
+        self.use_dropout = use_dropout
+        self.dropout_rate = dropout_rate
+        self.optimizer_name = optimizer
+        self.learning_rate = learning_rate
+        self.freeze_base_model = freeze_base_model
+
+        self.model: Optional[Model] = None
+        self.base_model: Optional[Model] = None
+        self.history = None
+        self._build_model()
+
+    def __get_optimizer(self):
+        if self.optimizer_name == "adam":
+            return Adam(learning_rate=self.learning_rate)
+        if self.optimizer_name == "sgd":
+            return SGD(learning_rate=self.learning_rate, momentum=0.9)
+        if self.optimizer_name == "rmsprop":
+            return RMSprop(learning_rate=self.learning_rate)
+        if self.optimizer_name == "nadam":
+            return Nadam(learning_rate=self.learning_rate)
+
+        raise ValueError(
+            f"Optimizer {self.optimizer_name} is not supported. Choose from: ['adam', 'sgd', 'rmsprop', 'nadam']"
+        )
+
+    def _build_model(self):
+        print(f"Building model with base: {self.base_model_class.__name__}")
+
+        print("Importing pre-trained weights from ImageNet...")
+        self.base_model = self.base_model_class(
+            weights="imagenet",
+            include_top=False,
+            input_shape=self.input_shape,
+        )
+
+        if self.freeze_base_model:
+            print("Freezing base model weights...")
+            self.base_model.trainable = False
+        else:
+            print("Base model weights are trainable")
+
+        print("Building top layers...")
+        x = self.base_model.output
+        x = GlobalAveragePooling2D()(x)
+
+        for i, (units, activation) in enumerate(self.fully_connected_layers):
+            print(f"Adding FC layer {i+1}: {units} units with {activation} activation")
+            x = Dense(units, activation=activation, name=f"fc_{i+1}")(x)
+            if self.use_dropout:
+                x = Dropout(self.dropout_rate, name=f"dropout_{i+1}")(x)
+
+        print(f"Adding classification layer with {self.num_classes} classes")
+        output = Dense(self.num_classes, activation="softmax", name="classification")(x)
+
+        self.model = Model(
+            inputs=self.base_model.input,
+            outputs=output,
+            name=f"{self.base_model_name}_transfer",
+        )
+
+        self.model.compile(
+            optimizer=self.__get_optimizer(),
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"],
+        )
+
+        print(f"Model {self.base_model_name} built successfully")
+
+    def fit(
+        self,
+        verbose,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_val: np.ndarray,
+        y_val: np.ndarray,
+        epochs: int = 10,
+        batch_size: int = 32,
+        callbacks: Optional[List[Callback]] = None,
+    ):
+        print(f"Starting training of {self.base_model_name}...")
+
+        self.history = self.model.fit(
+            x_train,
+            y_train,
+            validation_data=(x_val, y_val),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            verbose=verbose,
+        )
+
+        print(f"Training of {self.base_model_name} completed")
+        return self.history
+
+    def evaluate(self, verbose, x_test: np.ndarray, y_test: np.ndarray):
+        print(f"Evaluating {self.base_model_name} model...")
+        test_loss, test_acc = self.model.evaluate(x_test, y_test, verbose=verbose)
+        print(
+            f"{self.base_model_name} test accuracy: {test_acc:.4f}, test loss: {test_loss:.4f}"
+        )
+        return test_loss, test_acc
+
+    def summary(self):
+        print(f"\n--- {self.base_model_name} Model Summary ---")
+        self.model.summary()
+
+    def fine_tune(
+        self,
+        verbose,
+        x_train: np.ndarray,
+        y_train: np.ndarray,
+        x_val: np.ndarray,
+        y_val: np.ndarray,
+        num_layers_to_unfreeze: int = 10,
+        epochs: int = 5,
+        batch_size: int = 32,
+        learning_rate: float = 0.0001,
+        callbacks: Optional[List[Callback]] = None,
+    ):
+        if not self.freeze_base_model:
+            print("Base model is already trainable, skipping fine-tuning")
+            return None
+
+        print(f"Fine-tuning {self.base_model_name} model...")
+
+        total_layers = len(self.base_model.layers)
+        for layer in self.base_model.layers[
+            -(min(num_layers_to_unfreeze, total_layers)) :
+        ]:
+            layer.trainable = True
+
+        print(
+            f"Unfrozen {min(num_layers_to_unfreeze, total_layers)} layers from the base model"
+        )
+
+        self.learning_rate = learning_rate
+        self.model.compile(
+            optimizer=self.__get_optimizer(),
+            loss="sparse_categorical_crossentropy",
+            metrics=["accuracy"],
+        )
+
+        fine_tune_history = self.model.fit(
+            x_train,
+            y_train,
+            validation_data=(x_val, y_val),
+            epochs=epochs,
+            batch_size=batch_size,
+            callbacks=callbacks,
+            verbose=verbose,
+        )
+
+        print(f"Fine-tuning of {self.base_model_name} completed")
+        return fine_tune_history
+
+
+class ModelEvaluator:
+    def __init__(self):
+        self.results = {}
+
+    def evaluate_model(
+        self,
+        verbose,
+        model: TransferLearningModel,
+        x_test: np.ndarray,
+        y_test: np.ndarray,
+    ):
+        model_name = model.base_model_name
+        test_loss, test_acc = model.evaluate(verbose, x_test, y_test)
+
+        self.results[model_name] = {"accuracy": test_acc, "loss": test_loss}
+
+        return test_loss, test_acc
+
+    def compare_models(self):
+        print("\n--- Model Comparison Results ---")
+        sorted_results = sorted(
+            self.results.items(), key=lambda x: x[1]["accuracy"], reverse=True
+        )
+
+        print("{:<15} {:<10} {:<10}".format("Model", "Accuracy", "Loss"))
+        print("-" * 35)
+
+        for model_name, metrics in sorted_results:
+            print(
+                "{:<15} {:<10.4f} {:<10.4f}".format(
+                    model_name, metrics["accuracy"], metrics["loss"]
+                )
+            )
+
+        best_model = sorted_results[0][0]
+        print(
+            f"\nBest model: {best_model} with accuracy: {self.results[best_model]['accuracy']:.4f}"
+        )
+
+        return sorted_results
+
+
 if __name__ == "__main__":
-    LOGGING_ENABLED = False
+    LOGGING_ENABLED = True
     TF_LOG_VERBOSITY = Utils.get_tf_log_verbosity(LOGGING_ENABLED)
 
     logger = OutputLogger(LOGGING_ENABLED)
@@ -358,3 +621,103 @@ if __name__ == "__main__":
 
     dataset_config = DatasetConfig.traffic_signs()
     dataset = KaggleDataset(dataset_config)
+
+    dataset_input_shape = dataset.get_sample_shape()
+    dataset_num_classes = dataset.get_num_of_classes()
+    print(f"Input shape: {dataset_input_shape}")
+    print(f"Number of classes: {dataset_num_classes}")
+
+    models_config = [
+        {
+            "name": "VGG19",
+            "fully_connected_layers": [(256, "relu"), (128, "relu")],
+            "use_dropout": True,
+            "dropout_rate": 0.5,
+            "optimizer": "adam",
+            "learning_rate": 0.001,
+            "epochs": 5,
+            "batch_size": 32,
+        },
+        # {
+        #     "name": "ResNet152V2",
+        #     "fully_connected_layers": [(512, "relu"), (256, "relu")],
+        #     "use_dropout": True,
+        #     "dropout_rate": 0.4,
+        #     "optimizer": "adam",
+        #     "learning_rate": 0.0005,
+        #     "epochs": 5,
+        #     "batch_size": 32,
+        # },
+        # {
+        #     "name": "EfficientNetB7",
+        #     "fully_connected_layers": [(512, "relu"), (256, "relu"), (128, "relu")],
+        #     "use_dropout": True,
+        #     "dropout_rate": 0.5,
+        #     "optimizer": "adam",
+        #     "learning_rate": 0.0005,
+        #     "epochs": 5,
+        #     "batch_size": 32,
+        # },
+        # {
+        #     "name": "Xception",
+        #     "fully_connected_layers": [(256, "relu"), (128, "relu")],
+        #     "use_dropout": True,
+        #     "dropout_rate": 0.5,
+        #     "optimizer": "adam",
+        #     "learning_rate": 0.001,
+        #     "epochs": 5,
+        #     "batch_size": 32,
+        # },
+    ]
+
+    evaluator = ModelEvaluator()
+
+    for config in models_config:
+        print(f"\n{'='*50}")
+        print(f"Training {config['name']} model")
+        print(f"{'='*50}")
+
+        tl_model = TransferLearningModel(
+            base_model_name=config["name"],
+            input_shape=dataset_input_shape,
+            num_classes=dataset_num_classes,
+            fully_connected_layers=config["fully_connected_layers"],
+            use_dropout=config["use_dropout"],
+            dropout_rate=config["dropout_rate"],
+            optimizer=config["optimizer"],
+            learning_rate=config["learning_rate"],
+            freeze_base_model=True,
+        )
+
+        tl_model.summary()
+
+        history = tl_model.fit(
+            verbose=TF_LOG_VERBOSITY,
+            x_train=dataset.x_train,
+            y_train=dataset.y_train,
+            x_val=dataset.x_val,
+            y_val=dataset.y_val,
+            epochs=config["epochs"],
+            batch_size=config["batch_size"],
+        )
+
+        # Uncomment to enable fine-tuning
+        # fine_tune_history = tl_model.fine_tune(
+        #     verbose=TF_LOG_VERBOSITY,
+        #     x_train=dataset.x_train,
+        #     y_train=dataset.y_train,
+        #     x_val=dataset.x_val,
+        #     y_val=dataset.y_val,
+        #     num_layers_to_unfreeze=5,
+        #     epochs=5,
+        #     batch_size=config["batch_size"],
+        #     learning_rate=config["learning_rate"] / 10,
+        # )
+
+        evaluator.evaluate_model(
+            TF_LOG_VERBOSITY, tl_model, dataset.x_test, dataset.y_test
+        )
+
+    best_models = evaluator.compare_models()
+
+    logger.stop()
