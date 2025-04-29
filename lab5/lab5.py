@@ -41,9 +41,6 @@ class KaggleDataset:
         self,
         config: DatasetConfig,
         download_dir: str = "dataset",
-        auto_load: bool = True,
-        normalize: bool = True,
-        shuffle: bool = True,
     ):
         script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -58,16 +55,16 @@ class KaggleDataset:
         self.x_val = None
         self.y_val = None
 
-        self.is_normalized = not normalize
-        self.is_shuffled = not shuffle
-
         self.__api.authenticate()
 
-        if auto_load:
-            self.download()
-            self.load_all_data()
+        self.__download()
+        self.__load_all_data()
 
-    def download(self, unzip: bool = True) -> None:
+        self.__augment()
+        self.__normalize()
+        self.__shuffle()
+
+    def __download(self, unzip: bool = True) -> None:
         if (
             os.listdir(self.__download_path)
             if os.path.exists(self.__download_path)
@@ -95,7 +92,7 @@ class KaggleDataset:
                 files.append(os.path.join(root, f))
         return files
 
-    def load_all_data(self) -> None:
+    def __load_all_data(self) -> None:
         if self.config.file_type == "pickle":
             (
                 self.x_train,
@@ -108,41 +105,80 @@ class KaggleDataset:
         else:
             raise ValueError(f"Unsupported file type: {self.config.file_type}")
 
-        if not self.is_normalized:
-            self.normalize()
-
-        if not self.is_shuffled:
-            self.shuffle()
+        if self.x_train is None or self.y_train is None:
+            raise ValueError("Training data is not loaded properly.")
+        if self.x_test is None or self.y_test is None:
+            raise ValueError("Test data is not loaded properly.")
+        if self.x_val is None or self.y_val is None:
+            raise ValueError("Validation data is not loaded properly.")
 
         print(f"Train data loaded: {self.x_train.shape}, {self.y_train.shape}")
         print(f"Validation data loaded: {self.x_val.shape}, {self.y_val.shape}")
         print(f"Test data loaded: {self.x_test.shape}, {self.y_test.shape}")
 
-    def normalize(self) -> None:
-        if self.x_train is not None and not self.is_normalized:
-            self.x_train = self.x_train / 255.0
-        if self.x_test is not None and not self.is_normalized:
-            self.x_test = self.x_test / 255.0
-        self.is_normalized = True
+    def __normalize(self) -> None:
+        if self.x_train is None or self.x_test is None or self.x_val is None:
+            raise RuntimeError("Data not loaded. Cannot normalize.")
+
+        self.x_train = self.x_train / 255.0
+        self.x_test = self.x_test / 255.0
+        self.x_val = self.x_val / 255.0
+
         print("Data normalized")
 
-    def shuffle(self) -> None:
-        if (
-            self.x_train is not None
-            and self.y_train is not None
-            and not self.is_shuffled
-        ):
-            indices = np.random.permutation(len(self.x_train))
-            self.x_train = self.x_train[indices]
-            self.y_train = self.y_train[indices]
+    def __shuffle(self) -> None:
+        if self.x_train is None or self.y_train is None:
+            raise RuntimeError("Training data not loaded. Cannot shuffle.")
 
-        if self.x_test is not None and self.y_test is not None and not self.is_shuffled:
-            indices = np.random.permutation(len(self.x_test))
-            self.x_test = self.x_test[indices]
-            self.y_test = self.y_test[indices]
+        indices = np.random.permutation(len(self.x_train))
+        self.x_train = self.x_train[indices]
+        self.y_train = self.y_train[indices]
 
-        self.is_shuffled = True
-        print("Data shuffled")
+        indices = np.random.permutation(len(self.x_val))
+        self.x_val = self.x_val[indices]
+        self.y_val = self.y_val[indices]
+
+        print("Train and validation data shuffled")
+
+    def __augment(self) -> None:
+        if self.x_train is None or self.y_train is None:
+            raise RuntimeError("Training data not loaded. Cannot augment.")
+
+        datagen = ImageDataGenerator(
+            rotation_range=10,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            zoom_range=0.1,
+            shear_range=0.1,
+            horizontal_flip=False,
+        )
+
+        augmented_generator = datagen.flow(
+            self.x_train,
+            tf.keras.utils.to_categorical(self.y_train, self.get_num_of_classes()),
+            batch_size=32,
+        )
+
+        augment_size = len(self.x_train)
+        augmented_images = []
+        augmented_labels = []
+
+        for _ in range(augment_size):
+            x_aug, y_aug = next(augmented_generator)
+            augmented_images.append(x_aug[0])
+            augmented_labels.append(np.argmax(y_aug[0]))
+
+        augmented_images = np.array(augmented_images)
+        augmented_labels = np.array(augmented_labels)
+
+        self.x_train = np.concatenate([self.x_train, augmented_images], axis=0)
+        self.y_train = np.concatenate([self.y_train, augmented_labels], axis=0)
+
+        indices = np.random.permutation(len(self.x_train))
+        self.x_train = self.x_train[indices]
+        self.y_train = self.y_train[indices]
+
+        print(f"Train data augmented. New shape: {self.x_train.shape}")
 
     def __load_pickle_file(
         self,
@@ -190,8 +226,9 @@ class KaggleDataset:
             ("x_val", x_val),
         ]:
             if len(x_data.shape) == 4:
-                if x_data.shape[1] in [1, 3]:
-                    x_data = np.transpose(x_data, (0, 2, 3, 1))
+                if x_data.shape[1] not in [1, 3]:
+                    raise ValueError(f"Unsupported number of channels for {name}")
+                x_data = np.transpose(x_data, (0, 2, 3, 1))
             elif len(x_data.shape) == 3:
                 height = int(np.sqrt(x_data.shape[1]))
                 x_data = x_data.reshape(x_data.shape[0], height, height, 1)
@@ -208,9 +245,17 @@ class KaggleDataset:
         return x_train, y_train, x_test, y_test, x_val, y_val
 
     def get_sample_shape(self) -> Tuple[int, int, int]:
+        if self.x_train is None:
+            raise RuntimeError(
+                "Training data not loaded. Cannot retrieve sample shape."
+            )
         return self.x_train.shape[1:]
 
     def get_num_of_classes(self) -> int:
+        if self.y_train is None:
+            raise RuntimeError(
+                "Training data not loaded. Cannot retrieve number of classes."
+            )
         return len(np.unique(self.y_train))
 
 
