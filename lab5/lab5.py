@@ -55,6 +55,8 @@ class KaggleDataset:
         self.y_train = None
         self.x_test = None
         self.y_test = None
+        self.x_val = None
+        self.y_val = None
 
         self.is_normalized = not normalize
         self.is_shuffled = not shuffle
@@ -95,9 +97,14 @@ class KaggleDataset:
 
     def load_all_data(self) -> None:
         if self.config.file_type == "pickle":
-            self.x_train, self.y_train, self.x_test, self.y_test = (
-                self.__load_pickle_file()
-            )
+            (
+                self.x_train,
+                self.y_train,
+                self.x_test,
+                self.y_test,
+                self.x_val,
+                self.y_val,
+            ) = self.__load_pickle_file()
         else:
             raise ValueError(f"Unsupported file type: {self.config.file_type}")
 
@@ -108,6 +115,7 @@ class KaggleDataset:
             self.shuffle()
 
         print(f"Train data loaded: {self.x_train.shape}, {self.y_train.shape}")
+        print(f"Validation data loaded: {self.x_val.shape}, {self.y_val.shape}")
         print(f"Test data loaded: {self.x_test.shape}, {self.y_test.shape}")
 
     def normalize(self) -> None:
@@ -138,7 +146,7 @@ class KaggleDataset:
 
     def __load_pickle_file(
         self,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         if not self.config.combined_filename:
             raise ValueError("No combined filename specified in config")
 
@@ -157,7 +165,14 @@ class KaggleDataset:
                 "Pickle file doesn't contain expected dictionary structure."
             )
 
-        required_keys = ["x_train", "y_train", "x_test", "y_test"]
+        required_keys = [
+            "x_train",
+            "y_train",
+            "x_test",
+            "y_test",
+            "x_validation",
+            "y_validation",
+        ]
         for key in required_keys:
             if key not in data:
                 raise KeyError(f"Required key '{key}' not found in pickle file.")
@@ -166,24 +181,31 @@ class KaggleDataset:
         y_train = data["y_train"]
         x_test = data["x_test"]
         y_test = data["y_test"]
+        x_val = data["x_validation"]
+        y_val = data["y_validation"]
 
-        for x_data_name, x_data in [("x_train", x_train), ("x_test", x_test)]:
+        for name, x_data in [
+            ("x_train", x_train),
+            ("x_test", x_test),
+            ("x_val", x_val),
+        ]:
             if len(x_data.shape) == 4:
-                if x_data.shape[-1] > 3:
-                    if x_data_name == "x_train":
-                        x_train = np.transpose(x_data, (0, 2, 3, 1))
-                    else:
-                        x_test = np.transpose(x_data, (0, 2, 3, 1))
+                if x_data.shape[1] in [1, 3]:
+                    x_data = np.transpose(x_data, (0, 2, 3, 1))
             elif len(x_data.shape) == 3:
                 height = int(np.sqrt(x_data.shape[1]))
-                if x_data_name == "x_train":
-                    x_train = x_data.reshape(x_data.shape[0], height, height, 1)
-                else:
-                    x_test = x_data.reshape(x_data.shape[0], height, height, 1)
+                x_data = x_data.reshape(x_data.shape[0], height, height, 1)
             else:
-                raise ValueError(f"Unsupported shape for {x_data_name}")
+                raise ValueError(f"Unsupported shape for {name}")
 
-        return x_train, y_train, x_test, y_test
+            if name == "x_train":
+                x_train = x_data
+            elif name == "x_test":
+                x_test = x_data
+            else:
+                x_val = x_data
+
+        return x_train, y_train, x_test, y_test, x_val, y_val
 
     def get_sample_shape(self) -> Tuple[int, int, int]:
         return self.x_train.shape[1:]
