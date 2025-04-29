@@ -70,11 +70,11 @@ deactivate
 
 ---
 
-## Special Instructions for Lab 4
+## Special Instructions for Lab 4 and Lab 5
 
 ### Kaggle API Key Required
 
-**Lab 4 depends on datasets from Kaggle. You must set up your Kaggle API key before running any scripts in this lab.**
+**Both Lab 4 and Lab 5 depend on datasets from Kaggle. You must set up your Kaggle API key before running any scripts in these labs.**
 
 To do this:
 
@@ -89,17 +89,17 @@ To do this:
    chmod 600 ~/.kaggle/kaggle.json
    ```
 
-Without this setup, Lab 4 will not be able to access the necessary datasets.
+Without this setup, Lab 4 and Lab 5 will not be able to access the necessary datasets.
 
-### Viewing TensorBoard for Lab 4
+### Viewing TensorBoard for Lab 4 and Lab 5
 
-If you want to monitor training progress with TensorBoard in Lab 4:
+If you want to monitor training progress with TensorBoard in both Lab 4 and Lab 5:
 
-1. Run `lab4.py` as usual:
+1. Run the respective lab script (e.g., `lab4.py` or `lab5.py`):
    ```bash
-   python lab4.py
+   python lab4.py  # For Lab 4
    ```
-2. Then, start TensorBoard from the `lab4` directory:
+2. Then, start TensorBoard from the lab directory:
    ```bash
    tensorboard --logdir=logs
    ```

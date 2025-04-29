@@ -169,7 +169,5 @@ cython_debug/
 plots
 output_log.txt
 dataset
-outputs/
-logs
 
 .vscode
