@@ -24,6 +24,9 @@ from tensorflow.keras.applications import (
     EfficientNetB7,
     Xception,
 )
+from keras.callbacks import Callback
+from sklearn.metrics import f1_score, roc_auc_score
+import tensorflow.summary as tf_summary
 
 
 class DatasetConfig:
@@ -376,6 +379,29 @@ class Utils:
         return TensorBoard(log_dir=log_dir, histogram_freq=1)
 
 
+class MetricsLogger(Callback):
+    def __init__(self, validation_data, log_dir):
+        super().__init__()
+        self.validation_data = validation_data
+        self.log_dir = log_dir
+        self.file_writer = tf.summary.create_file_writer(log_dir)
+
+    def on_epoch_end(self, epoch, logs=None):
+        val_data, val_labels = self.validation_data
+        val_preds = self.model.predict(val_data, verbose=0)
+        pred_classes = np.argmax(val_preds, axis=1)
+
+        f1 = f1_score(val_labels, pred_classes, average="macro")
+        try:
+            auc = roc_auc_score(val_labels, val_preds, multi_class="ovo", average="macro")
+        except ValueError:
+            auc = float("nan")
+
+        with self.file_writer.as_default():
+            tf.summary.scalar("val_f1_score", f1, step=epoch)
+            tf.summary.scalar("val_auc", auc, step=epoch)
+
+
 class TransferLearningModel:
     MODEL_MAP = {
         "VGG19": VGG19,
@@ -691,6 +717,16 @@ if __name__ == "__main__":
 
         tl_model.summary()
 
+        # TensorBoard callback
+        tensorboard_callback = Utils.get_tensorboard_callback(model_name=config["name"])0
+
+        # Custom metrics callback
+        log_dir = tensorboard_callback.log_dir
+        custom_metrics_callback = MetricsLogger(
+            validation_data=(dataset.x_val, dataset.y_val),
+            log_dir=log_dir
+        )
+
         history = tl_model.fit(
             verbose=TF_LOG_VERBOSITY,
             x_train=dataset.x_train,
@@ -699,6 +735,7 @@ if __name__ == "__main__":
             y_val=dataset.y_val,
             epochs=config["epochs"],
             batch_size=config["batch_size"],
+            callbacks=[tensorboard_callback, custom_metrics_callback],
         )
 
         # Uncomment to enable fine-tuning
