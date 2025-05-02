@@ -27,7 +27,10 @@ from tensorflow.keras.applications import (
 from keras.callbacks import Callback
 from sklearn.metrics import f1_score, roc_auc_score
 import tensorflow.summary as tf_summary
-
+import matplotlib.pyplot as plt
+from PIL import Image
+import requests
+from io import BytesIO
 
 class DatasetConfig:
     def __init__(
@@ -592,6 +595,57 @@ class TransferLearningModel:
         print(f"Fine-tuning of {self.base_model_name} completed")
         return fine_tune_history
 
+class ImageRecognizer:
+    @staticmethod
+    def load_image_from_url(url, target_size):
+        """Завантажити зображення з URL та підготувати його для моделі"""
+        try:
+            response = requests.get(url)
+            img = Image.open(BytesIO(response.content))
+            img = img.convert('RGB')
+            img = img.resize(target_size)
+            return img
+        except Exception as e:
+            print(f"Помилка завантаження зображення: {e}")
+            return None
+
+    @staticmethod
+    def preprocess_image(img, model_name):
+        """Попередня обробка зображення для конкретної моделі"""
+        img_array = np.array(img) / 255.0
+        
+        # Специфічна підготовка для кожної моделі
+        if model_name == "VGG19":
+            img_array = tf.keras.applications.vgg19.preprocess_input(img_array)
+        elif model_name == "Xception":
+            img_array = tf.keras.applications.xception.preprocess_input(img_array)
+        elif model_name == "InceptionV3":
+            img_array = tf.keras.applications.inception_v3.preprocess_input(img_array)
+        elif model_name == "ResNet152V2":
+            img_array = tf.keras.applications.resnet.preprocess_input(img_array)
+        elif model_name == "DenseNet201":
+            img_array = tf.keras.applications.densenet.preprocess_input(img_array)
+        elif model_name == "EfficientNetB7":
+            img_array = tf.keras.applications.efficientnet.preprocess_input(img_array)
+        
+        return np.expand_dims(img_array, axis=0)
+
+    @staticmethod
+    def recognize_image(model, img_array, class_names):
+        """Розпізнати зображення за допомогою навченої моделі"""
+        predictions = model.predict(img_array)
+        predicted_class = np.argmax(predictions)
+        confidence = np.max(predictions)
+        return class_names[predicted_class], confidence
+
+    @staticmethod
+    def display_results(img, model_name, class_name, confidence):
+        """Відобразити результати розпізнавання"""
+        plt.figure(figsize=(8, 4))
+        plt.imshow(img)
+        plt.title(f"Модель: {model_name}\nКлас: {class_name}\nВпевненість: {confidence:.2%}")
+        plt.axis('off')
+        plt.show()
 
 class ModelEvaluator:
     def __init__(self):
@@ -633,6 +687,32 @@ class ModelEvaluator:
         )
 
         return sorted_results
+    
+    def recognize_test_images(self, image_urls, class_names, target_size=(224, 224)):
+        """Розпізнати тестові зображення всіма навченими моделями"""
+        for url in image_urls:
+            print(f"\n{'='*50}")
+            print(f"Розпізнавання зображення: {url}")
+            print(f"{'='*50}")
+            
+            for model_name, model_data in self.results.items():
+                # Завантажуємо та підготовлюємо зображення
+                img = ImageRecognizer.load_image_from_url(url, target_size)
+                if img is None:
+                    continue
+                
+                # Підготовка зображення для конкретної моделі
+                img_array = ImageRecognizer.preprocess_image(img, model_name)
+                
+                # Розпізнавання
+                class_name, confidence = ImageRecognizer.recognize_image(
+                    model_data["model"], 
+                    img_array,
+                    class_names
+                )
+                
+                # Відображення результатів
+                ImageRecognizer.display_results(img, model_name, class_name, confidence)
 
 
 if __name__ == "__main__":
@@ -718,7 +798,7 @@ if __name__ == "__main__":
         tl_model.summary()
 
         # TensorBoard callback
-        tensorboard_callback = Utils.get_tensorboard_callback(model_name=config["name"])0
+        tensorboard_callback = Utils.get_tensorboard_callback(model_name=config["name"])
 
         # Custom metrics callback
         log_dir = tensorboard_callback.log_dir
@@ -756,5 +836,18 @@ if __name__ == "__main__":
         )
 
     best_models = evaluator.compare_models()
+    
+     # Приклад тестових зображень для розпізнавання
+    test_images = [
+        "https://example.com/traffic_sign1.jpg",
+        "https://example.com/traffic_sign2.jpg",
+        "https://example.com/traffic_sign3.jpg"
+    ]
+    
+    # Отримуємо назви класів (вам потрібно адаптувати під ваш набір даних)
+    class_names = [f"Class_{i}" for i in range(dataset_num_classes)] 
+    
+    # Розпізнавання тестових зображень
+    evaluator.recognize_test_images(test_images, class_names)
 
     logger.stop()
