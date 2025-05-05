@@ -665,36 +665,50 @@ class ModelEvaluator:
         num_samples: int = 5,
         class_names: Optional[list] = None
     ):
-    
-    # Make predictions
-        predictions = model.predict(x_data[:num_samples], verbose=0)
-        pred_classes = np.argmax(predictions, axis=1)
-        
-        # Create figure
+        # Перевірка, чи модель навчена
+        if not hasattr(model, 'model') or model.model is None:
+            print("⚠️ Модель не навчена! Спочатку викличте model.fit().")
+            return
+
+        # Перевірка даних
+        print("\n🔍 Перевірка даних перед візуалізацією:")
+        print(f"- Розмірність x_data: {x_data.shape}")
+        print(f"- Діапазон пікселів: min={x_data.min()}, max={x_data.max()}")
+        print(f"- Канали: {x_data.shape[-1]} (1=grayscale, 3=RGB)")
+
+        # Конвертація зображень для відображення
+        if x_data.max() <= 1.0:
+            x_display = (x_data * 255).astype(np.uint8)
+        else:
+            x_display = x_data.astype(np.uint8)
+
+        # Візуалізація
         plt.figure(figsize=(15, 5))
-        
         for i in range(num_samples):
             plt.subplot(1, num_samples, i + 1)
-            plt.imshow(x_data[i])
+            
+            # Відображення градацій сірого або RGB
+            if x_display[i].shape[-1] == 1:
+                plt.imshow(x_display[i][:, :, 0], cmap='gray')
+            else:
+                plt.imshow(x_display[i])
+                
             plt.axis('off')
             
+            # Передбачення
+            pred = model.predict(np.expand_dims(x_data[i], axis=0), verbose=0)[0]
+            pred_class = np.argmax(pred)
+            confidence = np.max(pred)
             true_label = y_true[i]
-            pred_label = pred_classes[i]
-            confidence = np.max(predictions[i])
             
-            if class_names is not None:
-                true_class = class_names[true_label]
-                pred_class = class_names[pred_label]
-                title = f"True: {true_class}\nPred: {pred_class}\nConf: {confidence:.2f}"
-            else:
-                title = f"True: {true_label}\nPred: {pred_label}\nConf: {confidence:.2f}"
-            
-            color = 'green' if true_label == pred_label else 'red'
+            # Підписи
+            title = f"True: {true_label}\nPred: {pred_class}\nConf: {confidence:.2f}"
+            color = 'green' if true_label == pred_class else 'red'
             plt.title(title, color=color)
-    
-    plt.tight_layout()
-    plt.show()
-    
+
+        plt.tight_layout()
+        plt.show()
+        
 
 if __name__ == "__main__":
     LOGGING_ENABLED = True
@@ -848,16 +862,14 @@ if __name__ == "__main__":
         batch_size=best_model_config["batch_size"],
     )
     
-    # Visualize predictions on test set
-    print("\nVisualizing predictions on test images...")
+    # Після навчання моделі додайте:
+    print("\n=== Візуалізація передбачень ===")
     evaluator.visualize_predictions(
-        model=best_model,
+        model=tl_model,  # Використовуємо навчену модель
         x_data=dataset.x_test,
         y_true=dataset.y_test,
-        num_samples=10,  # Number of samples to visualize
-        # class_names=class_names  # You can add class names if available
+        num_samples=10
     )
-    
     # Evaluate on full test set
     print("\nEvaluating on full test set...")
     test_loss, test_acc = best_model.evaluate(
