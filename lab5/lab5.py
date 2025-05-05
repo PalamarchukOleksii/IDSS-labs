@@ -28,9 +28,7 @@ from keras.callbacks import Callback
 from sklearn.metrics import f1_score, roc_auc_score
 import tensorflow.summary as tf_summary
 import matplotlib.pyplot as plt
-from PIL import Image
-import requests
-from io import BytesIO
+
 
 class DatasetConfig:
     def __init__(
@@ -594,59 +592,30 @@ class TransferLearningModel:
 
         print(f"Fine-tuning of {self.base_model_name} completed")
         return fine_tune_history
-
-class ImageRecognizer:
-    @staticmethod
-    def load_image_from_url(url, target_size):
-        """Завантажити зображення з URL та підготувати його для моделі"""
+    
+    def predict(self, x_data: np.ndarray, verbose: int = 1) -> np.ndarray:
+    
+        if self.model is None:
+            raise RuntimeError("Model has not been built yet")
+        
+        print(f"Making predictions with {self.base_model_name} model...")
+        predictions = self.model.predict(x_data, verbose=verbose)
+        return predictions
+    
+    def save(self, filepath: str):
+        """Save the model to disk"""
         try:
-            response = requests.get(url)
-            img = Image.open(BytesIO(response.content))
-            img = img.convert('RGB')
-            img = img.resize(target_size)
-            return img
+            directory = os.path.dirname(filepath)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+                
+            save_model(self.model, filepath)
+            print(f"Model saved to {filepath}")
+            return True
         except Exception as e:
-            print(f"Помилка завантаження зображення: {e}")
-            return None
-
-    @staticmethod
-    def preprocess_image(img, model_name):
-        """Попередня обробка зображення для конкретної моделі"""
-        img_array = np.array(img) / 255.0
-        
-        # Специфічна підготовка для кожної моделі
-        if model_name == "VGG19":
-            img_array = tf.keras.applications.vgg19.preprocess_input(img_array)
-        elif model_name == "Xception":
-            img_array = tf.keras.applications.xception.preprocess_input(img_array)
-        elif model_name == "InceptionV3":
-            img_array = tf.keras.applications.inception_v3.preprocess_input(img_array)
-        elif model_name == "ResNet152V2":
-            img_array = tf.keras.applications.resnet.preprocess_input(img_array)
-        elif model_name == "DenseNet201":
-            img_array = tf.keras.applications.densenet.preprocess_input(img_array)
-        elif model_name == "EfficientNetB7":
-            img_array = tf.keras.applications.efficientnet.preprocess_input(img_array)
-        
-        return np.expand_dims(img_array, axis=0)
-
-    @staticmethod
-    def recognize_image(model, img_array, class_names):
-        """Розпізнати зображення за допомогою навченої моделі"""
-        predictions = model.predict(img_array)
-        predicted_class = np.argmax(predictions)
-        confidence = np.max(predictions)
-        return class_names[predicted_class], confidence
-
-    @staticmethod
-    def display_results(img, model_name, class_name, confidence):
-        """Відобразити результати розпізнавання"""
-        plt.figure(figsize=(8, 4))
-        plt.imshow(img)
-        plt.title(f"Модель: {model_name}\nКлас: {class_name}\nВпевненість: {confidence:.2%}")
-        plt.axis('off')
-        plt.show()
-
+            print(f"Error saving model: {e}")
+            return False
+    
 class ModelEvaluator:
     def __init__(self):
         self.results = {}
@@ -688,32 +657,44 @@ class ModelEvaluator:
 
         return sorted_results
     
-    def recognize_test_images(self, image_urls, class_names, target_size=(224, 224)):
-        """Розпізнати тестові зображення всіма навченими моделями"""
-        for url in image_urls:
-            print(f"\n{'='*50}")
-            print(f"Розпізнавання зображення: {url}")
-            print(f"{'='*50}")
+    def visualize_predictions(
+        self,
+        model: TransferLearningModel,
+        x_data: np.ndarray,
+        y_true: np.ndarray,
+        num_samples: int = 5,
+        class_names: Optional[list] = None
+    ):
+    
+    # Make predictions
+        predictions = model.predict(x_data[:num_samples], verbose=0)
+        pred_classes = np.argmax(predictions, axis=1)
+        
+        # Create figure
+        plt.figure(figsize=(15, 5))
+        
+        for i in range(num_samples):
+            plt.subplot(1, num_samples, i + 1)
+            plt.imshow(x_data[i])
+            plt.axis('off')
             
-            for model_name, model_data in self.results.items():
-                # Завантажуємо та підготовлюємо зображення
-                img = ImageRecognizer.load_image_from_url(url, target_size)
-                if img is None:
-                    continue
-                
-                # Підготовка зображення для конкретної моделі
-                img_array = ImageRecognizer.preprocess_image(img, model_name)
-                
-                # Розпізнавання
-                class_name, confidence = ImageRecognizer.recognize_image(
-                    model_data["model"], 
-                    img_array,
-                    class_names
-                )
-                
-                # Відображення результатів
-                ImageRecognizer.display_results(img, model_name, class_name, confidence)
-
+            true_label = y_true[i]
+            pred_label = pred_classes[i]
+            confidence = np.max(predictions[i])
+            
+            if class_names is not None:
+                true_class = class_names[true_label]
+                pred_class = class_names[pred_label]
+                title = f"True: {true_class}\nPred: {pred_class}\nConf: {confidence:.2f}"
+            else:
+                title = f"True: {true_label}\nPred: {pred_label}\nConf: {confidence:.2f}"
+            
+            color = 'green' if true_label == pred_label else 'red'
+            plt.title(title, color=color)
+    
+    plt.tight_layout()
+    plt.show()
+    
 
 if __name__ == "__main__":
     LOGGING_ENABLED = True
@@ -837,17 +818,52 @@ if __name__ == "__main__":
 
     best_models = evaluator.compare_models()
     
-     # Приклад тестових зображень для розпізнавання
-    test_images = [
-        "https://example.com/traffic_sign1.jpg",
-        "https://example.com/traffic_sign2.jpg",
-        "https://example.com/traffic_sign3.jpg"
-    ]
+    print("\n=== Testing Model Predictions ===")
     
-    # Отримуємо назви класів (вам потрібно адаптувати під ваш набір даних)
-    class_names = [f"Class_{i}" for i in range(dataset_num_classes)] 
+    # Select the best model (or you can choose any model you want to test)
+    best_model_name = evaluator.compare_models()[0][0]
+    best_model_config = next(cfg for cfg in models_config if cfg["name"] == best_model_name)
     
-    # Розпізнавання тестових зображень
-    evaluator.recognize_test_images(test_images, class_names)
+    # Create the best model (or load from saved weights if you have them)
+    best_model = TransferLearningModel(
+        base_model_name=best_model_name,
+        input_shape=dataset_input_shape,
+        num_classes=dataset_num_classes,
+        fully_connected_layers=best_model_config["fully_connected_layers"],
+        use_dropout=best_model_config["use_dropout"],
+        dropout_rate=best_model_config["dropout_rate"],
+        optimizer=best_model_config["optimizer"],
+        learning_rate=best_model_config["learning_rate"],
+        freeze_base_model=True,
+    )
+    
+    # Train the model quickly (or load pre-trained weights)
+    best_model.fit(
+        verbose=TF_LOG_VERBOSITY,
+        x_train=dataset.x_train,
+        y_train=dataset.y_train,
+        x_val=dataset.x_val,
+        y_val=dataset.y_val,
+        epochs=1,  # Just for demonstration, use more epochs for real training
+        batch_size=best_model_config["batch_size"],
+    )
+    
+    # Visualize predictions on test set
+    print("\nVisualizing predictions on test images...")
+    evaluator.visualize_predictions(
+        model=best_model,
+        x_data=dataset.x_test,
+        y_true=dataset.y_test,
+        num_samples=10,  # Number of samples to visualize
+        # class_names=class_names  # You can add class names if available
+    )
+    
+    # Evaluate on full test set
+    print("\nEvaluating on full test set...")
+    test_loss, test_acc = best_model.evaluate(
+        verbose=TF_LOG_VERBOSITY,
+        x_test=dataset.x_test,
+        y_test=dataset.y_test
+    )
 
     logger.stop()

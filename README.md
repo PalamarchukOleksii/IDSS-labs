@@ -42,7 +42,7 @@ Each lab has its own `requirements.txt` file. To install dependencies for a spec
 For example, for `lab1`:
 
 ```bash
-cd lab1
+cd lab5
 pip install -r requirements.txt
 ```
 
